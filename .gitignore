@@ -48,6 +48,9 @@ coverage/
 tmp/
 temp/
 
+# Load test results
+tests/load/results/*.json
+
 # Claude Code
 .claude/
 .turbo/
