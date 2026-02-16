@@ -71,6 +71,19 @@ export class QueueService implements OnModuleInit {
     private async setupReconciliationSchedules(): Promise<void> {
         this.logger.log('Setting up reconciliation job schedules...');
 
+        // Clean up stale repeatable jobs from Redis (from previous runs)
+        try {
+            const existing = await this.reconciliationQueue.getRepeatableJobs();
+            for (const job of existing) {
+                await this.reconciliationQueue.removeRepeatableByKey(job.key);
+            }
+            if (existing.length > 0) {
+                this.logger.debug(`Cleaned up ${existing.length} stale repeatable jobs`);
+            }
+        } catch (error) {
+            this.logger.warn(`Failed to clean up stale jobs: ${error instanceof Error ? error.message : 'Unknown'}`);
+        }
+
         for (const [jobType, schedule] of Object.entries(DEFAULT_SCHEDULES)) {
             try {
                 await this.scheduleReconciliationJob(jobType as JobType, schedule);

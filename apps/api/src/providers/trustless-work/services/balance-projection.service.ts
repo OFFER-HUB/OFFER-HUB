@@ -103,13 +103,13 @@ export class BalanceProjectionService {
     }> {
         const projected = await this.projectUserBalance(userId);
 
-        // Get user's Stellar address (if linked)
-        const user = await this.prisma.user.findUnique({
-            where: { id: userId },
-            select: { stellarAddress: true },
+        // Get user's primary wallet (Stellar address)
+        const wallet = await this.prisma.wallet.findFirst({
+            where: { userId, isActive: true, isPrimary: true },
+            select: { publicKey: true },
         });
 
-        if (!user?.stellarAddress) {
+        if (!wallet?.publicKey) {
             return {
                 consistent: true,
                 projected,
@@ -117,7 +117,7 @@ export class BalanceProjectionService {
         }
 
         // Get actual on-chain balance
-        const actualOnChain = await this.getOnChainBalance(user.stellarAddress);
+        const actualOnChain = await this.getOnChainBalance(wallet.publicKey);
 
         // Compare
         const expectedOnChain = new Big(projected.on_chain);
