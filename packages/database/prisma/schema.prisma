@@ -99,6 +99,16 @@ enum DisputeOpenedBy {
 enum Provider {
   AIRTM
   TRUSTLESS_WORK
+  STELLAR
+}
+
+enum WalletType {
+  INVISIBLE  // Server-side keypair, we hold encrypted secret
+  EXTERNAL   // User-connected wallet (Freighter, etc.) — future
+}
+
+enum WalletProvider {
+  STELLAR
 }
 
 enum WebhookStatus {
@@ -127,10 +137,8 @@ model User {
   airtmUserId   String?   @map("airtm_user_id")
   airtmLinkedAt DateTime? @map("airtm_linked_at")
 
-  // Stellar linkage
-  stellarAddress String? @unique @map("stellar_address")
-
   // Relations
+  wallets     Wallet[]
   balance     Balance?
   topUps      TopUp[]
   withdrawals Withdrawal[]
@@ -286,6 +294,29 @@ model Dispute {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("disputes")
+}
+
+model Wallet {
+  id              String         @id @default(dbgenerated()) // Prefixed ID: wal_
+  userId          String         @map("user_id")
+  user            User           @relation(fields: [userId], references: [id])
+  type            WalletType     @default(INVISIBLE)
+  provider        WalletProvider @default(STELLAR)
+
+  // Stellar-specific
+  publicKey       String         @unique @map("public_key")
+  secretEncrypted String?        @map("secret_encrypted") // AES-256-GCM encrypted (null for EXTERNAL)
+
+  // State
+  isPrimary       Boolean        @default(true) @map("is_primary")
+  isActive        Boolean        @default(true) @map("is_active")
+  lastSyncAt      DateTime?      @map("last_sync_at")
+
+  createdAt       DateTime       @default(now()) @map("created_at")
+  updatedAt       DateTime       @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@map("wallets")
 }
 
 model AuditLog {

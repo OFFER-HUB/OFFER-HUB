@@ -108,6 +108,12 @@ export class ReconciliationProcessor extends WorkerHost {
             config,
         });
 
+        // Guard: skip if dependencies aren't injected yet (race condition on startup)
+        if (!this.prisma) {
+            this.logger.warn('Processor dependencies not yet initialized, skipping job');
+            return;
+        }
+
         // Distributed lock check - skip if another instance is processing same job type
         if (await this.isJobTypeActive(job.name, job.id ?? '')) {
             this.logger.warn({

@@ -36,6 +36,13 @@ export class ApiKeyGuard implements CanActivate {
             throw new UnauthorizedException('Invalid Authorization format');
         }
 
+        // Handle master key (bootstrap key for creating the first API key)
+        const masterKey = process.env.OFFERHUB_MASTER_KEY;
+        if (masterKey && token === masterKey) {
+            request['apiKey'] = { id: 'master', name: 'master', scopes: ['read', 'write', 'support'] };
+            return true;
+        }
+
         // Handle short-lived tokens
         if (token.startsWith('ohk_tok_')) {
             const payload = await this.authService.validateShortLivedToken(token);
