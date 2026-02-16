@@ -1,5 +1,6 @@
 import { Injectable, Inject, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { PAYMENT_PROVIDER, PaymentProvider } from '../../providers/payment/payment-provider.interface';
 import { EventBusService, EVENT_CATALOG } from '../events';
 import {
     OrderCreatedPayload,
@@ -66,6 +67,7 @@ export class OrdersService {
         @Inject(PrismaService) private readonly prisma: PrismaService,
         @Inject(BalanceService) private readonly balanceService: BalanceService,
         @Inject(EscrowClient) private readonly escrowClient: EscrowClient,
+        @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
         @Inject(EventBusService) private readonly eventBus: EventBusService,
     ) { }
 
@@ -361,14 +363,24 @@ export class OrdersService {
 
         this.logger.log(`Creating escrow for order ${orderId}`);
 
-        const [buyer, seller] = await Promise.all([
-            this.prisma.user.findUnique({ where: { id: order.buyerId } }),
-            this.prisma.user.findUnique({ where: { id: order.sellerId } }),
+        // Verify both buyer and seller are ready with the payment provider
+        const [buyerReady, sellerReady] = await Promise.all([
+            this.paymentProvider.isUserReady(order.buyerId),
+            this.paymentProvider.isUserReady(order.sellerId),
         ]);
 
-        if (!buyer?.airtmUserId || !seller?.airtmUserId) {
-            throw new Error('Both buyer and seller must have Airtm accounts');
+        if (!buyerReady || !sellerReady) {
+            throw new Error('Both buyer and seller must have active payment accounts');
         }
+
+        // Get payment addresses for escrow
+        const [buyerDeposit, sellerDeposit] = await Promise.all([
+            this.paymentProvider.getDepositInfo(order.buyerId),
+            this.paymentProvider.getDepositInfo(order.sellerId),
+        ]);
+
+        const buyerAddress = buyerDeposit.address!;
+        const sellerAddress = sellerDeposit.address!;
 
         try {
             await this.prisma.$transaction(
@@ -408,8 +420,8 @@ export class OrdersService {
             const escrowResponse = await this.escrowClient.createEscrow(
                 {
                     order_id: order.id,
-                    buyer_address: buyer.airtmUserId,
-                    seller_address: seller.airtmUserId,
+                    buyer_address: buyerAddress,
+                    seller_address: sellerAddress,
                     amount: order.amount,
                     milestones: milestonesData,
                     metadata: {
@@ -417,7 +429,7 @@ export class OrdersService {
                         description: order.description || '',
                     },
                 },
-                buyer.airtmUserId,
+                buyerAddress,
             );
 
             const escrow = await this.prisma.escrow.create({

@@ -2,7 +2,7 @@ import { Module } from '@nestjs/common';
 import { BalanceService } from './balance.service';
 import { BalanceController } from './balance.controller';
 import { DatabaseModule } from '../database/database.module';
-import { AirtmModule } from '../../providers/airtm/airtm.module';
+import { PaymentProviderModule } from '../../providers/payment/payment-provider.module';
 import { AuthModule } from '../auth/auth.module';
 import { EventsModule } from '../events/events.module';
 
@@ -27,7 +27,7 @@ import { EventsModule } from '../events/events.module';
 @Module({
     imports: [
         DatabaseModule,
-        AirtmModule,
+        PaymentProviderModule,
         AuthModule,
         EventsModule,
     ],

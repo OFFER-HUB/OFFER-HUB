@@ -7,7 +7,7 @@ import {
     BalanceReleasedPayload
 } from '../events/types';
 import { PrismaService } from '../database/prisma.service';
-import { AirtmUserClient } from '../../providers/airtm';
+import { PAYMENT_PROVIDER, PaymentProvider } from '../../providers/payment/payment-provider.interface';
 import {
     ERROR_CODES,
     isValidAmount,
@@ -96,7 +96,7 @@ export class BalanceService {
 
     constructor(
         @Inject(PrismaService) private readonly prisma: PrismaService,
-        @Inject(AirtmUserClient) private readonly airtmUser: AirtmUserClient,
+        @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
         @Inject(EventBusService) private readonly eventBus: EventBusService,
     ) { }
 
@@ -460,8 +460,8 @@ export class BalanceService {
     }
 
     /**
-     * Synchronizes local balance with provider (Airtm) balance.
-     * Used for reconciliation and consistency checks.
+     * Synchronizes local balance with payment provider balance.
+     * Works with both crypto (Stellar Horizon) and AirTM providers.
      *
      * @param userId - The user's internal ID
      * @returns Sync result with discrepancy details
@@ -482,7 +482,9 @@ export class BalanceService {
             });
         }
 
-        if (!user.airtmUserId) {
+        // Check if user is ready with the active payment provider
+        const isReady = await this.paymentProvider.isUserReady(userId);
+        if (!isReady) {
             return {
                 synced: false,
                 localBalance: '0.00',
@@ -496,10 +498,10 @@ export class BalanceService {
 
         let providerBalance: string;
         try {
-            const airtmBalance = await this.airtmUser.getBalance(user.airtmUserId);
-            providerBalance = formatAmount(airtmBalance.available);
+            const rawBalance = await this.paymentProvider.getBalance(userId);
+            providerBalance = formatAmount(parseFloat(rawBalance));
         } catch (error) {
-            this.logger.warn(`Failed to fetch Airtm balance for user ${userId}: ${error}`);
+            this.logger.warn(`Failed to fetch provider balance for user ${userId}: ${error}`);
             return {
                 synced: false,
                 localBalance: localBalance.available,

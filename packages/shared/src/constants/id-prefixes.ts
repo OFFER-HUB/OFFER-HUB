@@ -15,6 +15,7 @@ export const ID_PREFIXES = {
     AUDIT_LOG: 'aud_',
     API_KEY: 'key_',
     MARKETPLACE: 'mkt_',
+    WALLET: 'wal_',
 } as const;
 
 export type IdPrefix = (typeof ID_PREFIXES)[keyof typeof ID_PREFIXES];

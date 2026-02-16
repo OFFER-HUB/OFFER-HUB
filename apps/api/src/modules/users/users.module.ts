@@ -3,22 +3,24 @@ import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { DatabaseModule } from '../database/database.module';
 import { AirtmModule } from '../../providers/airtm/airtm.module';
+import { PaymentProviderModule } from '../../providers/payment/payment-provider.module';
 import { AuthModule } from '../auth/auth.module';
 import { EventsModule } from '../events/events.module';
 
 /**
  * Users Module
  *
- * Provides user management and Airtm linking functionality.
+ * Provides user management and payment initialization.
  *
  * Endpoints:
- * - POST /users - Create a new user (idempotent)
+ * - POST /users - Create a new user (idempotent, auto-creates wallet in crypto mode)
  * - POST /users/:id/airtm/link - Link user's Airtm account
  */
 @Module({
     imports: [
         DatabaseModule,
         AirtmModule,
+        PaymentProviderModule,
         AuthModule,
         EventsModule,
     ],

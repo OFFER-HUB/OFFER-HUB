@@ -3,7 +3,7 @@ import { EventEmitter2 } from '@nestjs/event-emitter';
 import { EventBusService } from '../../events';
 import { BalanceService } from '../balance.service';
 import { PrismaService } from '../../database/prisma.service';
-import { AirtmUserClient } from '../../../providers/airtm';
+import { PAYMENT_PROVIDER } from '../../../providers/payment/payment-provider.interface';
 import {
     InsufficientFundsException,
     InsufficientReservedFundsException,
@@ -30,20 +30,19 @@ const createMockPrismaService = () => ({
 });
 
 /**
- * Creates a mock Airtm user client.
+ * Creates a mock payment provider.
  */
-const createMockAirtmUserClient = () => ({
-    getBalance: jest.fn().mockResolvedValue({
-        userId: 'airtm_user_456',
-        available: 100.0,
-        pending: 0,
-        currency: 'USD',
-        updatedAt: '2024-01-15T10:00:00Z',
+const createMockPaymentProvider = () => ({
+    isUserReady: jest.fn().mockResolvedValue(true),
+    getBalance: jest.fn().mockResolvedValue('100.00'),
+    getDepositInfo: jest.fn().mockResolvedValue({
+        provider: 'crypto',
+        method: 'stellar_address',
+        address: 'GTEST_STELLAR_ADDRESS',
     }),
-    verifyUserEligibilityById: jest.fn().mockResolvedValue({
-        eligible: true,
-        airtmUserId: 'airtm_user_456',
-    }),
+    initializeUser: jest.fn(),
+    signEscrowTransaction: jest.fn(),
+    sendPayment: jest.fn(),
 });
 
 /**
@@ -57,14 +56,14 @@ const createMockEventBusService = () => ({
 describe('BalanceService', () => {
     let service: BalanceService;
     let mockPrisma: ReturnType<typeof createMockPrismaService>;
-    let mockAirtmUser: ReturnType<typeof createMockAirtmUserClient>;
+    let mockPaymentProvider: ReturnType<typeof createMockPaymentProvider>;
     let mockEventBus: ReturnType<typeof createMockEventBusService>;
 
     beforeEach(async () => {
         jest.clearAllMocks();
 
         mockPrisma = createMockPrismaService();
-        mockAirtmUser = createMockAirtmUserClient();
+        mockPaymentProvider = createMockPaymentProvider();
         mockEventBus = createMockEventBusService();
 
         const module: TestingModule = await Test.createTestingModule({
@@ -75,8 +74,8 @@ describe('BalanceService', () => {
                     useValue: mockPrisma,
                 },
                 {
-                    provide: AirtmUserClient,
-                    useValue: mockAirtmUser,
+                    provide: PAYMENT_PROVIDER,
+                    useValue: mockPaymentProvider,
                 },
                 {
                     provide: EventBusService,
@@ -523,8 +522,10 @@ describe('BalanceService', () => {
         it('should sync balance and report no discrepancy', async () => {
             mockPrisma.user.findUnique.mockResolvedValueOnce({
                 id: 'usr_123',
-                airtmUserId: 'airtm_user_456',
             });
+
+            mockPaymentProvider.isUserReady.mockResolvedValueOnce(true);
+            mockPaymentProvider.getBalance.mockResolvedValueOnce('100.00');
 
             mockPrisma.balance.findUnique.mockResolvedValueOnce({
                 id: 'bal_123',
@@ -533,14 +534,6 @@ describe('BalanceService', () => {
                 reserved: '0.00',
                 currency: 'USD',
                 updatedAt: new Date(),
-            });
-
-            mockAirtmUser.getBalance.mockResolvedValueOnce({
-                userId: 'airtm_user_456',
-                available: 100.0,
-                pending: 0,
-                currency: 'USD',
-                updatedAt: '2024-01-15T10:00:00Z',
             });
 
             const result = await service.syncBalanceFromProvider('usr_123');
@@ -553,8 +546,10 @@ describe('BalanceService', () => {
         it('should flag discrepancy when balances differ', async () => {
             mockPrisma.user.findUnique.mockResolvedValueOnce({
                 id: 'usr_123',
-                airtmUserId: 'airtm_user_456',
             });
+
+            mockPaymentProvider.isUserReady.mockResolvedValueOnce(true);
+            mockPaymentProvider.getBalance.mockResolvedValueOnce('150.00');
 
             mockPrisma.balance.findUnique.mockResolvedValueOnce({
                 id: 'bal_123',
@@ -565,14 +560,6 @@ describe('BalanceService', () => {
                 updatedAt: new Date(),
             });
 
-            mockAirtmUser.getBalance.mockResolvedValueOnce({
-                userId: 'airtm_user_456',
-                available: 150.0,
-                pending: 0,
-                currency: 'USD',
-                updatedAt: '2024-01-15T10:00:00Z',
-            });
-
             const result = await service.syncBalanceFromProvider('usr_123');
 
             expect(result.synced).toBe(true);
@@ -580,11 +567,12 @@ describe('BalanceService', () => {
             expect(result.action).toBe('flagged');
         });
 
-        it('should return synced=false when user has no Airtm account', async () => {
+        it('should return synced=false when user is not ready with payment provider', async () => {
             mockPrisma.user.findUnique.mockResolvedValueOnce({
                 id: 'usr_123',
-                airtmUserId: null,
             });
+
+            mockPaymentProvider.isUserReady.mockResolvedValueOnce(false);
 
             const result = await service.syncBalanceFromProvider('usr_123');
 

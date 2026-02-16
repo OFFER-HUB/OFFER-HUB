@@ -5,6 +5,7 @@ import { OrdersService } from '../orders.service';
 import { PrismaService } from '../../database/prisma.service';
 import { BalanceService } from '../../balance/balance.service';
 import { EscrowClient } from '../../../providers/trustless-work/clients/escrow.client';
+import { PAYMENT_PROVIDER } from '../../../providers/payment/payment-provider.interface';
 import type { CreateOrderDto, MilestoneDto } from '../dto';
 import {
     OrderNotFoundException,
@@ -159,6 +160,21 @@ describe('OrdersService', () => {
                     useValue: {
                         createEscrow: jest.fn(),
                         fundEscrow: jest.fn(),
+                    },
+                },
+                {
+                    provide: PAYMENT_PROVIDER,
+                    useValue: {
+                        isUserReady: jest.fn().mockResolvedValue(true),
+                        getDepositInfo: jest.fn().mockResolvedValue({
+                            provider: 'crypto',
+                            method: 'stellar_address',
+                            address: 'GTEST_STELLAR_ADDRESS',
+                        }),
+                        getBalance: jest.fn().mockResolvedValue('1000.00'),
+                        initializeUser: jest.fn(),
+                        signEscrowTransaction: jest.fn(),
+                        sendPayment: jest.fn(),
                     },
                 },
                 {
