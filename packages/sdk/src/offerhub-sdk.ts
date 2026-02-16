@@ -5,6 +5,7 @@ import { OrdersResource } from './resources/orders';
 import { TopUpsResource } from './resources/topups';
 import { WithdrawalsResource } from './resources/withdrawals';
 import { DisputesResource } from './resources/disputes';
+import { WalletResource } from './resources/wallet';
 
 /**
  * Configuration options for the OfferHub SDK
@@ -71,6 +72,9 @@ export class OfferHubSDK {
     /** Disputes resource - manage dispute operations */
     public readonly disputes: DisputesResource;
 
+    /** Wallet resource - manage crypto wallets (crypto-native mode) */
+    public readonly wallet: WalletResource;
+
     constructor(config: OfferHubSDKConfig) {
         // Create HTTP client
         this.httpClient = new HttpClient({
@@ -88,6 +92,7 @@ export class OfferHubSDK {
         this.topups = new TopUpsResource(this.httpClient);
         this.withdrawals = new WithdrawalsResource(this.httpClient);
         this.disputes = new DisputesResource(this.httpClient);
+        this.wallet = new WalletResource(this.httpClient);
     }
 
     /**
@@ -114,6 +119,7 @@ export class OfferHubSDK {
         newSdk.topups = new TopUpsResource(newClient);
         newSdk.withdrawals = new WithdrawalsResource(newClient);
         newSdk.disputes = new DisputesResource(newClient);
+        newSdk.wallet = new WalletResource(newClient);
 
         return newSdk;
     }
@@ -142,6 +148,7 @@ export class OfferHubSDK {
         newSdk.topups = new TopUpsResource(newClient);
         newSdk.withdrawals = new WithdrawalsResource(newClient);
         newSdk.disputes = new DisputesResource(newClient);
+        newSdk.wallet = new WalletResource(newClient);
 
         return newSdk;
     }

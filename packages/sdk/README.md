@@ -152,7 +152,32 @@ const orders = await sdk.orders.list({
 });
 ```
 
-### TopUps
+### Wallet (Crypto-Native Mode)
+
+Access user wallets when using `PAYMENT_PROVIDER=crypto`. Wallets are created automatically on user registration.
+
+```typescript
+// Get wallet info (balance, public key, type)
+const wallet = await sdk.wallet.getInfo('usr_123');
+console.log(wallet.publicKey);     // 'GABCDEF...'
+console.log(wallet.balance.usdc);  // '150.0000000'
+console.log(wallet.balance.xlm);   // '5.0000000'
+
+// Get deposit address — tell user where to send USDC
+const deposit = await sdk.wallet.getDepositAddress('usr_123');
+console.log(deposit.address);       // 'GABCDEF...'
+console.log(deposit.asset.code);    // 'USDC'
+console.log(deposit.network);       // 'testnet'
+console.log(deposit.instructions);  // 'Send USDC to this Stellar address...'
+
+// Get transaction history
+const txs = await sdk.wallet.getTransactions('usr_123', 10);
+txs.forEach(tx => {
+  console.log(`${tx.type}: ${tx.amount} ${tx.asset} (${tx.hash})`);
+});
+```
+
+### TopUps (AirTM Mode)
 
 Handle top-up (payin) operations for adding funds to user balances.
 
@@ -179,7 +204,7 @@ await sdk.topups.refresh('topup_abc123');
 await sdk.topups.cancel('topup_abc123');
 ```
 
-### Withdrawals
+### Withdrawals (AirTM Mode)
 
 Handle withdrawal (payout) operations for moving funds out of the platform.
 
@@ -333,6 +358,9 @@ import type {
   TopUp,
   Withdrawal,
   Dispute,
+  WalletInfo,
+  DepositInfo,
+  WalletTransaction,
   OrderStatus,
   UserType,
   // ... and many more
@@ -353,7 +381,8 @@ src/
 │   ├── orders.ts           # Orders resource
 │   ├── topups.ts           # TopUps resource
 │   ├── withdrawals.ts      # Withdrawals resource
-│   └── disputes.ts         # Disputes resource
+│   ├── disputes.ts         # Disputes resource
+│   └── wallet.ts           # Wallet resource (crypto-native)
 ├── types/
 │   └── index.ts            # Type definitions
 └── errors/

@@ -49,8 +49,9 @@ The Orchestrator is a **single unified service** that handles:
 |---------|---------|----------|
 | PostgreSQL | Data persistence (orders, users, balances, audit logs) | Yes |
 | Redis | Job queues, rate limiting, caching, idempotency | Yes |
-| Airtm API | Fiat on/off ramp | Yes |
+| Airtm API | Fiat on/off ramp | Only in `airtm` mode |
 | Trustless Work API | Stellar escrow management | Yes |
+| Stellar Horizon | Blockchain queries and wallet monitoring | Only in `crypto` mode |
 
 ---
 
@@ -60,14 +61,17 @@ Before deploying, ensure you have:
 
 ### 1. External Service Accounts
 
+**Crypto-Native Mode (default):**
+- [ ] **Trustless Work Account** - Register at trustlesswork.com
+  - API Key
+  - Webhook Secret
+- [ ] **`WALLET_ENCRYPTION_KEY`** - Generate with `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`
+
+**AirTM Mode (optional, fiat on/off ramp):**
 - [ ] **Airtm Enterprise Account** - Contact Airtm for API credentials
   - API Key
   - API Secret
   - Webhook Secret (for signature verification)
-
-- [ ] **Trustless Work Account** - Register at trustlesswork.com
-  - API Key
-  - Webhook Secret
 
 ### 2. Infrastructure
 
