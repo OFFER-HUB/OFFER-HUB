@@ -18,6 +18,7 @@ import { DisputesModule } from './modules/disputes/disputes.module';
 import { AuditModule } from './modules/audit-logs/audit.module';
 import { AirtmModule } from './providers/airtm/airtm.module';
 import { PaymentProviderModule } from './providers/payment/payment-provider.module';
+import { WalletModule } from './modules/wallet/wallet.module';
 import { UsersModule } from './modules/users/users.module';
 import { EventsModule } from './modules/events/events.module';
 import { QueueModule } from './modules/queues/queue.module';
@@ -71,6 +72,7 @@ function getRedisConnection() {
     AuthModule,
     AirtmModule,
     PaymentProviderModule,
+    WalletModule,
     WebhooksModule,
     UsersModule,
     TopUpsModule,
