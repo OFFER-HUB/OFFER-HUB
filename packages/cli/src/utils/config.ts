@@ -9,6 +9,7 @@ import dotenv from 'dotenv';
 export interface CliConfig {
     apiUrl: string;
     apiKey: string;
+    paymentProvider?: 'crypto' | 'airtm';
 }
 
 /**

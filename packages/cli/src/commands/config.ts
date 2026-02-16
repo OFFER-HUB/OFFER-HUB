@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import inquirer from 'inquirer';
 import chalk from 'chalk';
+import { randomBytes } from 'crypto';
 import { loadConfig, saveConfig, getConfigPath } from '../utils/config.js';
 
 /**
@@ -42,9 +43,33 @@ export function createConfigCommand(): Command {
                 },
             ]);
 
+            // Payment provider selection
+            const providerAnswer = await inquirer.prompt([
+                {
+                    type: 'list',
+                    name: 'paymentProvider',
+                    message: 'Payment provider:',
+                    choices: [
+                        { name: 'Crypto-Native (Stellar invisible wallets)', value: 'crypto' },
+                        { name: 'AirTM (fiat on/off ramp)', value: 'airtm' },
+                    ],
+                    default: 'crypto',
+                },
+            ]);
+
+            if (providerAnswer.paymentProvider === 'crypto') {
+                const walletKey = randomBytes(32).toString('hex');
+                console.log('');
+                console.log(chalk.cyan('Generated WALLET_ENCRYPTION_KEY:'));
+                console.log(chalk.yellow(walletKey));
+                console.log(chalk.gray('Add this to your .env file as WALLET_ENCRYPTION_KEY'));
+                console.log('');
+            }
+
             saveConfig({
                 apiUrl: options.apiUrl || answers.apiUrl,
                 apiKey: options.apiKey || answers.apiKey,
+                paymentProvider: providerAnswer.paymentProvider,
             });
 
             console.log(chalk.green('✓ Configuration saved successfully!'));
@@ -70,6 +95,7 @@ export function createConfigCommand(): Command {
             console.log('');
             console.log(chalk.bold('API URL:'), currentConfig.apiUrl);
             console.log(chalk.bold('API Key:'), `${currentConfig.apiKey.substring(0, 10)}...`);
+            console.log(chalk.bold('Payment:'), currentConfig.paymentProvider || 'crypto (default)');
             console.log('');
             console.log(chalk.gray(`Config file: ${getConfigPath()}`));
             console.log('');

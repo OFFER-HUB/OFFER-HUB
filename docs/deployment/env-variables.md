@@ -11,11 +11,13 @@ PORT=4000
 DATABASE_URL=postgresql://user:pass@host:5432/db?sslmode=require
 REDIS_URL=redis://:password@host:6379
 OFFERHUB_MASTER_KEY=your-secure-key
-AIRTM_ENV=prod
-AIRTM_API_KEY=...
-AIRTM_API_SECRET=...
+PAYMENT_PROVIDER=crypto
+WALLET_ENCRYPTION_KEY=...          # Required for crypto mode
 TRUSTLESS_API_KEY=...
+STELLAR_NETWORK=mainnet
 PUBLIC_BASE_URL=https://your-domain.com
+# AIRTM_API_KEY=...               # Only required for airtm mode
+# AIRTM_API_SECRET=...            # Only required for airtm mode
 ```
 
 ---
@@ -123,7 +125,27 @@ node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 
 ---
 
-## Airtm Integration
+## Payment Provider
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `PAYMENT_PROVIDER` | No | `crypto` | Payment mode: `crypto` (Stellar wallets) or `airtm` (fiat via AirTM) |
+
+### Crypto-Native Mode (`PAYMENT_PROVIDER=crypto`)
+
+| Variable | Required | Example | Description |
+|----------|----------|---------|-------------|
+| `WALLET_ENCRYPTION_KEY` | Yes | 64 hex chars | AES-256-GCM key for encrypting Stellar private keys |
+
+#### Generating `WALLET_ENCRYPTION_KEY`
+
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+```
+
+> **Security:** This key protects all user wallet private keys. If lost, wallet access is permanently lost. Store securely and back up.
+
+### AirTM Mode (`PAYMENT_PROVIDER=airtm`)
 
 | Variable | Required | Example | Description |
 |----------|----------|---------|-------------|
@@ -300,11 +322,17 @@ REDIS_URL=redis://localhost:6379
 # Auth
 OFFERHUB_MASTER_KEY=change-me-in-production
 
-# Airtm
-AIRTM_ENV=sandbox
-AIRTM_API_KEY=
-AIRTM_API_SECRET=
-AIRTM_WEBHOOK_SECRET=
+# Payment Provider (crypto or airtm)
+PAYMENT_PROVIDER=crypto
+
+# Crypto-Native Wallet (required when PAYMENT_PROVIDER=crypto)
+WALLET_ENCRYPTION_KEY=           # Generate: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+
+# Airtm (required when PAYMENT_PROVIDER=airtm)
+# AIRTM_ENV=sandbox
+# AIRTM_API_KEY=
+# AIRTM_API_SECRET=
+# AIRTM_WEBHOOK_SECRET=
 
 # Trustless Work
 TRUSTLESS_API_KEY=

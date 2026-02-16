@@ -41,8 +41,50 @@ export interface User {
     type: UserType;
     airtmEmail?: string;
     airtmLinkedAt?: string;
+    wallet?: WalletInfo;
     createdAt: string;
     updatedAt: string;
+}
+
+// ==================== Wallet Types ====================
+
+export interface WalletInfo {
+    publicKey: string;
+    type: 'INVISIBLE' | 'EXTERNAL';
+    provider: 'STELLAR';
+    isActive: boolean;
+    isPrimary: boolean;
+    balance: WalletBalance;
+    createdAt: string;
+}
+
+export interface WalletBalance {
+    usdc: string;
+    xlm: string;
+}
+
+export interface DepositInfo {
+    provider: string;
+    method: string;
+    address: string;
+    asset: {
+        code: string;
+        issuer: string;
+    };
+    network: string;
+    instructions: string;
+}
+
+export interface WalletTransaction {
+    id: string;
+    type: string;
+    from: string;
+    to: string;
+    amount: string;
+    asset: string;
+    createdAt: string;
+    hash: string;
+    successful: boolean;
 }
 
 export interface LinkAirtmRequest {

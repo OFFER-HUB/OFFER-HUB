@@ -9,3 +9,4 @@ export { OrdersResource } from './orders';
 export { TopUpsResource } from './topups';
 export { WithdrawalsResource } from './withdrawals';
 export { DisputesResource } from './disputes';
+export { WalletResource } from './wallet';

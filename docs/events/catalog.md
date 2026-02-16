@@ -56,11 +56,17 @@ data: {
 | `user.airtm_linked` | User linked Airtm account | `{ userId, airtmUserId, linkedAt }` |
 | `user.stellar_linked` | User linked Stellar address | `{ userId, stellarAddress, linkedAt }` |
 
+### Wallet Events
+
+| Event | Description | Payload |
+|-------|-------------|---------|
+| `wallet.created` | Crypto wallet created for user | `{ userId, publicKey, provider, funded, trustlineReady }` |
+
 ### Balance Events
 
 | Event | Description | Payload |
 |-------|-------------|---------|
-| `balance.credited` | Balance credited (topup, refund, release) | `{ userId, amount, source, newBalance }` |
+| `balance.credited` | Balance credited (topup, refund, release, stellar deposit) | `{ userId, amount, source, newBalance, transactionHash? }` |
 | `balance.debited` | Balance debited (withdrawal, order) | `{ userId, amount, destination, newBalance }` |
 | `balance.reserved` | Balance reserved for order | `{ userId, amount, orderId, reservedBalance }` |
 | `balance.released` | Reserved balance released | `{ userId, amount, orderId, reason }` |
