@@ -15,7 +15,8 @@ describe('CryptoUtils', () => {
 
     describe('encrypt/decrypt round-trip', () => {
         it('should encrypt and decrypt a Stellar secret key', () => {
-            const secret = 'SCZANGBA5YHTNYVVV3C7CAZMCLXPILHSE6PNVWHUK3CACEH2D5IOQKBS';
+            // Generate a fake Stellar-like secret for testing (not a real key)
+            const secret = 'S' + crypto.randomBytes(28).toString('base64').replace(/[^A-Z2-7]/g, 'A').slice(0, 55);
             const encrypted = encrypt(secret);
             const decrypted = decrypt(encrypted);
             expect(decrypted).toBe(secret);
