@@ -191,19 +191,19 @@ This roadmap is the definitive guide to building the Orchestrator. It maps 100% 
 
 ---
 
-## 🏁 Phase 9: Final Polish & QA
-- [x] 9.1: Comprehensive E2E test suite (API -> DB -> Worker).
-- [x] 9.2: Rate limiting implementation (Redis-based, configurable).
-- [ ] 9.3: Load testing suite (100+ req/min stress test).
-- [ ] 9.4: Installer script `npm create offer-hub-orchestrator@latest`.
+## 🏁 Phase 9: Final Polish & QA (IN PROGRESS)
+- [x] 9.1: Comprehensive E2E test suite (API -> DB -> Worker) — [Issue #64](https://github.com/OFFER-HUB/OFFER-HUB/issues/64).
+- [x] 9.2: Rate limiting implementation (Redis-based, configurable) — [Issue #65](https://github.com/OFFER-HUB/OFFER-HUB/issues/65).
+- [ ] 9.3: Production deployment guide (updated for crypto-native) — [Issue #67](https://github.com/OFFER-HUB/OFFER-HUB/issues/67).
+- [ ] 9.4: Installer script `npm create offer-hub-orchestrator@latest` — [Issue #66](https://github.com/OFFER-HUB/OFFER-HUB/issues/66).
 - [x] 9.5: Production deployment guide finalized (`docs/deployment/`).
 
 ---
 
-## 🔄 Phase 10: Crypto-Native Provider (IN PROGRESS)
+## 🔄 Phase 10: Crypto-Native Provider (COMPLETED)
 *Goal: Add crypto-native payment provider using invisible Stellar wallets, while keeping AirTM code intact for future use.*
 
-**Status:** 🟢 Active Development (Decision: 2026-02-16)
+**Status:** ✅ Complete (2026-02-16)
 **Approach:** Strategy Pattern -- NOT deleting AirTM, abstracting with `PaymentProvider` interface
 **Documentation:** See [docs/crypto-native/](./docs/crypto-native/) for full plan and architecture.
 
@@ -213,49 +213,44 @@ This roadmap is the definitive guide to building the Orchestrator. It maps 100% 
 - **Wallet Strategy:** Invisible wallets (server-side Stellar keypairs, AES-256-GCM encrypted)
 - **Impact:** No code deletion. New provider + interface + wallet module added alongside existing code.
 
-### Phase 10.1: Foundation (1-2 days) — [Issue #74](https://github.com/OFFER-HUB/OFFER-HUB/issues/74)
+### Phase 10.1: Foundation — [Issue #74](https://github.com/OFFER-HUB/OFFER-HUB/issues/74) *(PR #78)*
 
-- [ ] **10.1.1:** Create `PaymentProvider` interface (Strategy Pattern)
-- [ ] **10.1.2:** Create `CryptoNativeProvider` implementing the interface
-- [ ] **10.1.3:** Create `PaymentProviderModule` with config-based factory injection
-- [ ] **10.1.4:** Implement AES-256-GCM crypto utilities (`apps/api/src/utils/crypto.ts`)
-- [ ] **10.1.5:** Database migration: new `Wallet` table (separate from User, supports multiple wallets)
-- [ ] **10.1.6:** Add env vars: `PAYMENT_PROVIDER`, `WALLET_ENCRYPTION_KEY`
-- [ ] **10.1.7:** Update `.env.example` (AirTM vars marked optional, new vars added)
+- [x] **10.1.1:** Create `PaymentProvider` interface (Strategy Pattern)
+- [x] **10.1.2:** Create `CryptoNativeProvider` implementing the interface
+- [x] **10.1.3:** Create `PaymentProviderModule` with config-based factory injection
+- [x] **10.1.4:** Implement AES-256-GCM crypto utilities (`apps/api/src/utils/crypto.ts`)
+- [x] **10.1.5:** Database migration: new `Wallet` table (separate from User, supports multiple wallets)
+- [x] **10.1.6:** Add env vars: `PAYMENT_PROVIDER`, `WALLET_ENCRYPTION_KEY`
+- [x] **10.1.7:** Update `.env.example` (AirTM vars marked optional, new vars added)
 
-### Phase 10.2: Wallet Module (2-3 days) — [Issue #75](https://github.com/OFFER-HUB/OFFER-HUB/issues/75)
+### Phase 10.2: Wallet Module — [Issue #75](https://github.com/OFFER-HUB/OFFER-HUB/issues/75) *(PR #79)*
 
-- [ ] **10.2.1:** Implement `WalletService` (create, getKeypair, getBalance, signTransaction, sendPayment)
-- [ ] **10.2.2:** Implement `WalletController` (GET wallet info, deposit address, transaction history)
-- [ ] **10.2.3:** Implement `BlockchainMonitorService` (Horizon streaming, deposit detection, balance credit)
-- [ ] **10.2.4:** Implement USDC trustline setup for new accounts
-- [ ] **10.2.5:** Implement testnet utilities (friendbot funding)
-- [ ] **10.2.6:** Register `WalletModule` in `AppModule`
+- [x] **10.2.1:** Implement `WalletService` (create, getKeypair, getBalance, signTransaction, sendPayment)
+- [x] **10.2.2:** Implement `WalletController` (GET wallet info, deposit address, transaction history)
+- [x] **10.2.3:** Implement `BlockchainMonitorService` (Horizon streaming, deposit detection, balance credit)
+- [x] **10.2.4:** Implement USDC trustline setup for new accounts
+- [x] **10.2.5:** Implement testnet utilities (friendbot funding)
+- [x] **10.2.6:** Register `WalletModule` in `AppModule`
 
-### Phase 10.3: Service Integration (2-3 days) — [Issue #76](https://github.com/OFFER-HUB/OFFER-HUB/issues/76)
+### Phase 10.3: Service Integration — [Issue #76](https://github.com/OFFER-HUB/OFFER-HUB/issues/76) *(PR #80)*
 
-- [ ] **10.3.1:** Update `UsersService` -- auto-create wallet on registration via `PaymentProvider.initializeUser()`
-- [ ] **10.3.2:** Update `BalanceService` -- sync from blockchain via `PaymentProvider.getBalance()`
-- [ ] **10.3.3:** Update `OrdersService` -- replace `airtmUserId` checks with `PaymentProvider.isUserReady()`
-- [ ] **10.3.4:** Update `OrdersService` -- use `PaymentProvider.signEscrowTransaction()` for escrow funding
-- [ ] **10.3.5:** Update `ResolutionService` -- use PaymentProvider for crediting on release/refund
-- [ ] **10.3.6:** Update reconciliation jobs to use PaymentProvider when `PAYMENT_PROVIDER=crypto`
-- [ ] **10.3.7:** Ensure app boots without AirTM env vars when `PAYMENT_PROVIDER=crypto`
+- [x] **10.3.1:** Update `UsersService` -- auto-create wallet on registration via `PaymentProvider.initializeUser()`
+- [x] **10.3.2:** Update `BalanceService` -- sync from blockchain via `PaymentProvider.getBalance()`
+- [x] **10.3.3:** Update `OrdersService` -- replace `airtmUserId` checks with `PaymentProvider.isUserReady()`
+- [x] **10.3.4:** Update `OrdersService` -- use `PaymentProvider.signEscrowTransaction()` for escrow funding
+- [x] **10.3.5:** Update `ResolutionService` -- use PaymentProvider for crediting on release/refund
+- [x] **10.3.6:** Update reconciliation jobs to use PaymentProvider when `PAYMENT_PROVIDER=crypto`
+- [x] **10.3.7:** Ensure app boots without AirTM env vars when `PAYMENT_PROVIDER=crypto`
 
-### Phase 10.4: SDK, Docs & Testing (2 days) — [Issue #77](https://github.com/OFFER-HUB/OFFER-HUB/issues/77)
+### Phase 10.4: SDK, Docs & Testing — [Issue #77](https://github.com/OFFER-HUB/OFFER-HUB/issues/77) *(PR #81)*
 
-- [ ] **10.4.1:** Add `wallet` resource to SDK (getWalletInfo, getDepositAddress, getTransactions)
-- [ ] **10.4.2:** Update SDK types (User response includes wallet info)
-- [ ] **10.4.3:** Update CLI installer (PAYMENT_PROVIDER selection, optional AirTM creds)
-- [ ] **10.4.4:** Update deployment docs (env vars, crypto-native setup)
-- [ ] **10.4.5:** Unit tests: WalletService, CryptoNativeProvider, CryptoUtils
-- [ ] **10.4.6:** Integration tests: user creation -> wallet -> deposit -> escrow cycle
-- [ ] **10.4.7:** Testnet E2E: full escrow flow on Stellar testnet
-
-### Phase 9 Remaining (Parallel)
-
-- [ ] 9.3: Load testing suite (100+ req/min stress test)
-- [ ] 9.4: Installer script `npm create offer-hub-orchestrator@latest` (updated for crypto-native)
+- [x] **10.4.1:** Add `wallet` resource to SDK (getWalletInfo, getDepositAddress, getTransactions)
+- [x] **10.4.2:** Update SDK types (User response includes wallet info)
+- [x] **10.4.3:** Update CLI installer (PAYMENT_PROVIDER selection, optional AirTM creds)
+- [x] **10.4.4:** Update deployment docs (env vars, crypto-native setup)
+- [x] **10.4.5:** Unit tests: WalletService, CryptoNativeProvider, CryptoUtils
+- [x] **10.4.6:** Integration tests: user creation -> wallet -> deposit -> escrow cycle
+- [x] **10.4.7:** Testnet E2E: full escrow flow on Stellar testnet
 
 ---
 
@@ -273,24 +268,23 @@ This roadmap is the definitive guide to building the Orchestrator. It maps 100% 
 | Phase 7: Background Worker | ✅ Complete | 100% |
 | Phase 8: SDK & Developer Experience | ✅ Complete | 100% |
 | Phase 9: Final Polish & QA | 🟡 In Progress | 60% |
-| Phase 10: Crypto-Native Provider | 🟢 Active | 0% |
+| Phase 10: Crypto-Native Provider | ✅ Complete | 100% |
 
-**Overall Project Status:** ~90% Complete (Phase 10 is the final major milestone)
+**Overall Project Status:** ~96% Complete (Phase 9 remaining: deployment guide + installer script)
 
 ---
 
 ## 🎯 Next Steps
 
 ### Immediate (Active)
-1. 🟢 **Execute Phase 10.1** -- Foundation (Provider interface, crypto utils, schema migration)
-2. 🟢 **Execute Phase 10.2** -- Wallet Module (WalletService, blockchain monitor)
-3. 🟢 **Execute Phase 10.3** -- Integration (update existing services to use PaymentProvider)
-4. 🟢 **Execute Phase 10.4** -- SDK, docs, testing
+1. 🟢 **Issue #67** -- Production Deployment Guide (updated for crypto-native)
+2. 🟢 **Issue #66** -- Installer Script `npm create offer-hub-orchestrator@latest`
+3. 🟢 **Issue #65** -- Rate Limit Load Testing (k6/Artillery)
+4. 🟢 **Issue #64** -- Comprehensive E2E Test Suite
 
-### After Phase 10
-1. 🔵 **Phase 9 remaining** -- Load testing + installer script
-2. 🔵 **AirTM adapter** -- When Enterprise access is available, wrap existing code in PaymentProvider interface
-3. 🚀 **Launch crypto-native MVP** -- Deploy on testnet, onboard first users
+### After Phase 9
+1. 🔵 **AirTM adapter** -- When Enterprise access is available, wrap existing code in PaymentProvider interface
+2. 🚀 **Launch crypto-native MVP** -- Deploy on testnet, onboard first users
 
 ---
 

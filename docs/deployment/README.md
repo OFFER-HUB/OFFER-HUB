@@ -16,6 +16,14 @@ Complete guide for deploying OFFER-HUB Orchestrator to production.
 - [Monitoring & Health Checks](#monitoring--health-checks)
 - [Troubleshooting](#troubleshooting)
 
+### Additional Guides
+
+- [Crypto-Native Setup](./crypto-native-setup.md) - Stellar wallet deployment, key management, blockchain monitoring
+- [Security Hardening](./security-hardening.md) - Production security checklist, wallet encryption, incident response
+- [Production Checklist](./production-checklist.md) - One-page go-live verification
+- [Environment Variables](./env-variables.md) - Complete variable reference
+- [Docker Compose](./docker-compose.md) - Self-hosted deployment
+
 ---
 
 ## Architecture Overview
@@ -180,7 +188,7 @@ After deployment, register your webhook URLs:
 
 ## Environment Configuration
 
-### Required Variables
+### Required Variables (Crypto-Native Mode)
 
 ```env
 # Server
@@ -196,11 +204,11 @@ REDIS_URL=redis://:password@host:6379
 # Auth
 OFFERHUB_MASTER_KEY=your-secure-master-key
 
-# Airtm
-AIRTM_ENV=prod
-AIRTM_API_KEY=your-airtm-api-key
-AIRTM_API_SECRET=your-airtm-api-secret
-AIRTM_WEBHOOK_SECRET=your-airtm-webhook-secret
+# Payment Provider
+PAYMENT_PROVIDER=crypto
+
+# Wallet Encryption (crypto mode only)
+WALLET_ENCRYPTION_KEY=your-64-char-hex-key
 
 # Trustless Work
 TRUSTLESS_API_KEY=your-trustless-api-key
@@ -208,21 +216,27 @@ TRUSTLESS_WEBHOOK_SECRET=your-trustless-webhook-secret
 
 # Stellar
 STELLAR_NETWORK=mainnet
+STELLAR_HORIZON_URL=https://horizon.stellar.org
+STELLAR_USDC_ASSET_CODE=USDC
+STELLAR_USDC_ISSUER=GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN
 
 # Public URL (for callbacks)
 PUBLIC_BASE_URL=https://your-domain.com
 ```
+
+> For AirTM mode, set `PAYMENT_PROVIDER=airtm` and add AirTM credentials. See [env-variables.md](./env-variables.md).
 
 ### Environment-Specific Settings
 
 | Variable | Development | Staging | Production |
 |----------|-------------|---------|------------|
 | `NODE_ENV` | development | staging | production |
-| `AIRTM_ENV` | sandbox | sandbox | prod |
+| `PAYMENT_PROVIDER` | crypto | crypto | crypto |
 | `STELLAR_NETWORK` | testnet | testnet | mainnet |
 | `LOG_LEVEL` | debug | info | warn |
 
 See [env-variables.md](./env-variables.md) for complete reference.
+See [crypto-native-setup.md](./crypto-native-setup.md) for wallet-specific deployment.
 
 ---
 
@@ -518,14 +532,19 @@ DEBUG=bullmq:*
 - [ ] Webhook signature verification enabled
 - [ ] CORS configured for your frontend domain only
 - [ ] Master key is long and random (32+ bytes)
+- [ ] `WALLET_ENCRYPTION_KEY` backed up securely (crypto mode)
 - [ ] Regular backups configured for database
+
+See [production-checklist.md](./production-checklist.md) for the full go-live checklist.
+See [security-hardening.md](./security-hardening.md) for the complete security guide.
 
 ### Secret Rotation
 
 Periodically rotate:
 1. `OFFERHUB_MASTER_KEY` - Regenerate API keys after rotation
-2. Database password - Update `DATABASE_URL`
-3. Webhook secrets - Coordinate with Airtm/Trustless Work
+2. `WALLET_ENCRYPTION_KEY` - Requires re-encryption migration (see [security guide](./security-hardening.md#key-rotation-procedure))
+3. Database password - Update `DATABASE_URL`
+4. Webhook secrets - Coordinate with Trustless Work / Airtm
 
 ---
 
@@ -564,6 +583,9 @@ If you need independent scaling of API vs background jobs:
 ## Related Documentation
 
 - [Environment Variables](./env-variables.md) - Complete env var reference
+- [Crypto-Native Setup](./crypto-native-setup.md) - Stellar wallet deployment
+- [Security Hardening](./security-hardening.md) - Production security guide
+- [Production Checklist](./production-checklist.md) - Go-live verification
 - [Docker Compose](./docker-compose.md) - Self-hosted deployment
 - [Architecture Overview](../architecture/overview.md) - System design
 - [API Reference](../api/README.md) - Endpoint documentation
