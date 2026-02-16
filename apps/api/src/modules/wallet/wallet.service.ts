@@ -11,6 +11,7 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { TrustlessWorkConfig } from '../../providers/trustless-work/trustless-work.config';
 import { encrypt, decrypt } from '../../utils/crypto';
+import { generateWalletId } from '@offerhub/shared';
 import { fundTestAccount, setupTestTrustline } from './testnet.utils';
 
 @Injectable()
@@ -63,6 +64,7 @@ export class WalletService {
     // Save to DB
     await this.prisma.wallet.create({
       data: {
+        id: generateWalletId(),
         userId,
         publicKey,
         secretEncrypted,

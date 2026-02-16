@@ -37,6 +37,7 @@ export const generateEventId = () => generateId(ID_PREFIXES.EVENT);
 export const generateAuditLogId = () => generateId(ID_PREFIXES.AUDIT_LOG);
 export const generateApiKeyId = () => generateId(ID_PREFIXES.API_KEY);
 export const generateMarketplaceId = () => generateId(ID_PREFIXES.MARKETPLACE);
+export const generateWalletId = () => generateId(ID_PREFIXES.WALLET);
 
 /**
  * Extract prefix from an ID

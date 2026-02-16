@@ -3,6 +3,7 @@ import { OrdersController } from './orders.controller';
 import { OrdersService } from './orders.service';
 import { BalanceModule } from '../balance/balance.module';
 import { TrustlessWorkModule } from '../../providers/trustless-work/trustless-work.module';
+import { PaymentProviderModule } from '../../providers/payment/payment-provider.module';
 import { EventsModule } from '../events/events.module';
 
 /**
@@ -13,6 +14,7 @@ import { EventsModule } from '../events/events.module';
     imports: [
         BalanceModule, // For funds reservation/deduction
         TrustlessWorkModule, // For escrow creation/funding
+        PaymentProviderModule, // For provider-agnostic payment checks
         EventsModule,
     ],
     controllers: [OrdersController],

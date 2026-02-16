@@ -1,6 +1,7 @@
 import { Injectable, Inject, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AirtmUserClient } from '../../providers/airtm';
+import { PAYMENT_PROVIDER, PaymentProvider } from '../../providers/payment/payment-provider.interface';
 import { EventBusService, EVENT_CATALOG } from '../events';
 import { UserCreatedPayload, UserAirtmLinkedPayload } from '../events/types';
 import { ERROR_CODES, generateUserId } from '@offerhub/shared';
@@ -56,6 +57,7 @@ export class UsersService {
     constructor(
         @Inject(PrismaService) private readonly prisma: PrismaService,
         @Inject(AirtmUserClient) private readonly airtmUser: AirtmUserClient,
+        @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
         @Inject(EventBusService) private readonly eventBus: EventBusService,
     ) { }
 
@@ -127,6 +129,19 @@ export class UsersService {
             },
             metadata: EventBusService.createMetadata({ userId }),
         });
+
+        // Initialize payment capability (crypto: creates wallet, airtm: no-op)
+        try {
+            const paymentInfo = await this.paymentProvider.initializeUser(userId);
+            this.logger.log(
+                `Payment initialized for user ${userId}: provider=${paymentInfo.provider}, ready=${paymentInfo.ready}`,
+            );
+        } catch (error) {
+            this.logger.error(
+                `Failed to initialize payment for user ${userId}: ${error instanceof Error ? error.message : error}`,
+            );
+            // Non-blocking: user is still created, wallet can be retried
+        }
 
         return this.formatUserResponse(user);
     }

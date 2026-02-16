@@ -127,12 +127,22 @@ export class ReconciliationProcessor extends WorkerHost {
         // Track locally
         this.activeJobs.add(job.name);
 
+        const isCryptoMode = (process.env.PAYMENT_PROVIDER || 'crypto') === 'crypto';
+
         try {
             switch (job.name) {
                 case JOB_TYPES.SYNC_TOPUPS:
+                    if (isCryptoMode) {
+                        this.logger.debug('Skipping TopUp sync in crypto mode (no AirTM)');
+                        break;
+                    }
                     await this.syncTopUps(config, metrics);
                     break;
                 case JOB_TYPES.SYNC_WITHDRAWALS:
+                    if (isCryptoMode) {
+                        this.logger.debug('Skipping Withdrawal sync in crypto mode (no AirTM)');
+                        break;
+                    }
                     await this.syncWithdrawals(config, metrics);
                     break;
                 case JOB_TYPES.SYNC_ESCROWS:
