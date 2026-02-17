@@ -159,18 +159,26 @@ flowchart TD
 2. `approveMilestone` -- **Buyer** (approver role)
 3. `releaseFunds` -- **Buyer** (releaseSigner role)
 
-#### Phase 4b: Refund (Return to Buyer)
+#### Phase 4b: Refund (Return to Buyer) -- 2-Step Dispute+Resolve
+
+Trustless Work has no direct `/refund` endpoint. Refunds use a 2-step process: the buyer disputes, then the platform resolves with 100% back to buyer.
+
+> **Key constraint:** The `disputeResolver` role MUST differ from the disputer. The platform wallet serves as `disputeResolver`.
 
 ```mermaid
-flowchart LR
+flowchart TD
     A[Marketplace] -->|POST /refund| B[Orchestrator]
-    B -->|1. Refund| C[Trustless Work]
+    B -->|1. dispute-escrow| C[Trustless Work]
     C -->|unsigned XDR| B
-    B -->|sign with buyer wallet| B
+    B -->|sign with BUYER wallet| B
+    B -->|send-transaction| C
+    B -->|2. resolve-dispute 100% to buyer| C
+    C -->|unsigned XDR| B
+    B -->|sign with PLATFORM wallet| B
     B -->|send-transaction| C
     C -->|USDC to buyer| D[Stellar]
-    B -->|2. Buyer balance ++| B
-    B -->|3. CLOSED| A
+    B -->|3. Buyer balance ++| B
+    B -->|4. CLOSED| A
 ```
 
 #### Phase 4c: Dispute + Resolution

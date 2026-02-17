@@ -16,6 +16,7 @@ import { Prisma, MilestoneStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { BalanceService } from '../balance/balance.service';
 import { EscrowClient } from '../../providers/trustless-work/clients/escrow.client';
+import { TrustlessWorkConfig } from '../../providers/trustless-work/trustless-work.config';
 import { PAYMENT_PROVIDER, PaymentProvider } from '../../providers/payment/payment-provider.interface';
 import { OrdersService, OrderWithRelations } from '../orders/orders.service';
 import {
@@ -94,6 +95,7 @@ export class ResolutionService {
         @Inject(PrismaService) private readonly prisma: PrismaService,
         @Inject(BalanceService) private readonly balanceService: BalanceService,
         @Inject(EscrowClient) private readonly escrowClient: EscrowClient,
+        @Inject(TrustlessWorkConfig) private readonly twConfig: TrustlessWorkConfig,
         @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
         @Inject(OrdersService) private readonly ordersService: OrdersService,
         @Inject(EventBusService) private readonly eventBus: EventBusService,
@@ -501,24 +503,52 @@ export class ResolutionService {
             },
         );
 
-        // 7. Call escrowClient.refundEscrow + sign+send
+        // 7. Refund via TW: dispute-escrow + resolve-dispute (TW has no /refund endpoint)
         const escrowType =
             order.milestones && order.milestones.length > 1 ? 'multi-release' : 'single-release';
 
+        const [buyerDeposit, platformDeposit] = await Promise.all([
+            this.paymentProvider.getDepositInfo(order.buyerId),
+            this.paymentProvider.getDepositInfo(this.twConfig.platformUserId),
+        ]);
+        const buyerAddress = buyerDeposit.address!;
+        const platformAddress = platformDeposit.address!;
+
         try {
-            const refundResult = await this.escrowClient.refundEscrow(
+            // Step 1: Dispute the escrow (buyer signs — any party except disputeResolver can dispute)
+            this.logger.debug(`Refund step 1/2: Disputing escrow for order ${orderId}`);
+            const disputeResult = await this.escrowClient.disputeEscrow(
                 order.escrow.trustlessContractId!,
+                buyerAddress,
                 escrowType,
             );
 
-            // Sign and submit refund transaction if unsigned XDR returned
-            if (refundResult.unsignedTransaction) {
+            if (disputeResult.unsignedTransaction) {
                 const signedXdr = await this.paymentProvider.signEscrowTransaction(
                     order.buyerId,
-                    refundResult.unsignedTransaction,
+                    disputeResult.unsignedTransaction,
                 );
                 await this.escrowClient.sendTransaction(signedXdr);
-                this.logger.log(`Refund transaction signed and submitted for order ${orderId}`);
+                this.logger.log(`Refund step 1/2: Escrow disputed for order ${orderId}`);
+            }
+
+            // Step 2: Resolve dispute with 100% to buyer (platform signs as disputeResolver)
+            this.logger.debug(`Refund step 2/2: Resolving dispute for refund on order ${orderId}`);
+            const resolveResult = await this.escrowClient.resolveDisputeForRefund(
+                order.escrow.trustlessContractId!,
+                platformAddress,
+                buyerAddress,
+                order.amount,
+                escrowType,
+            );
+
+            if (resolveResult.unsignedTransaction) {
+                const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                    this.twConfig.platformUserId,
+                    resolveResult.unsignedTransaction,
+                );
+                await this.escrowClient.sendTransaction(signedXdr);
+                this.logger.log(`Refund step 2/2: Dispute resolved, funds returned to buyer for order ${orderId}`);
             }
         } catch (error: any) {
             this.logger.error(`Failed to refund escrow for order ${orderId}:`, error);
@@ -1134,19 +1164,45 @@ export class ResolutionService {
     ): Promise<void> {
         this.logger.debug(`Executing full refund for dispute ${dispute.id}`);
 
-        // Calls escrowClient.refundEscrow() + sign+send
+        // TW has no /refund endpoint — use dispute-escrow + resolve-dispute (2-step)
         const escrowType =
             order.milestones && order.milestones.length > 1 ? 'multi-release' : 'single-release';
 
-        const refundResult = await this.escrowClient.refundEscrow(
+        const [buyerDeposit, platformDeposit] = await Promise.all([
+            this.paymentProvider.getDepositInfo(order.buyerId),
+            this.paymentProvider.getDepositInfo(this.twConfig.platformUserId),
+        ]);
+        const buyerAddress = buyerDeposit.address!;
+        const platformAddress = platformDeposit.address!;
+
+        // Step 1: Dispute the escrow (buyer signs)
+        const disputeResult = await this.escrowClient.disputeEscrow(
             order.escrow!.trustlessContractId!,
+            buyerAddress,
             escrowType,
         );
 
-        if (refundResult.unsignedTransaction) {
+        if (disputeResult.unsignedTransaction) {
             const signedXdr = await this.paymentProvider.signEscrowTransaction(
                 order.buyerId,
-                refundResult.unsignedTransaction,
+                disputeResult.unsignedTransaction,
+            );
+            await this.escrowClient.sendTransaction(signedXdr);
+        }
+
+        // Step 2: Resolve dispute with 100% to buyer (platform signs as disputeResolver)
+        const resolveResult = await this.escrowClient.resolveDisputeForRefund(
+            order.escrow!.trustlessContractId!,
+            platformAddress,
+            buyerAddress,
+            order.amount,
+            escrowType,
+        );
+
+        if (resolveResult.unsignedTransaction) {
+            const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                this.twConfig.platformUserId,
+                resolveResult.unsignedTransaction,
             );
             await this.escrowClient.sendTransaction(signedXdr);
         }

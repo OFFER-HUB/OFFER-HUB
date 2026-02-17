@@ -6,8 +6,6 @@ import {
     TrustlessEscrowContract,
     TrustlessFundingResult,
     TrustlessReleaseResult,
-    TrustlessRefundResult,
-    mapTrustlessStatus,
 } from '../types/trustless-work.types';
 import { CreateEscrowDto } from '../dto/escrow.dto';
 import { DisputeResolutionDto } from '../dto/dispute-resolution.dto';
@@ -47,6 +45,7 @@ export class EscrowClient {
     async createEscrow(
         data: CreateEscrowDto,
         signerAddress: string,
+        platformAddress: string,
     ): Promise<TrustlessInitializeEscrowResponse> {
         try {
             this.logger.debug(`Creating escrow for order: ${data.order_id}`);
@@ -89,9 +88,9 @@ export class EscrowClient {
                 roles: {
                     approver: data.buyer_address, // Buyer approves work
                     serviceProvider: data.seller_address, // Seller provides service
-                    platformAddress: signerAddress, // Platform receives fees (must have USDC trustline!)
+                    platformAddress: platformAddress, // Platform receives fees (must have USDC trustline!)
                     releaseSigner: data.buyer_address, // Buyer releases funds
-                    disputeResolver: data.buyer_address, // Buyer resolves disputes
+                    disputeResolver: platformAddress, // Platform resolves disputes (MUST differ from disputer)
                     receiver: data.seller_address, // Seller receives funds
                 },
                 amount: amount,
@@ -337,32 +336,74 @@ export class EscrowClient {
     }
 
     /**
-     * Refund escrow funds.
-     * TW API pattern: POST /escrow/single-release/refund with { contractId }
+     * Dispute an escrow (step 1 of refund flow).
+     * TW API: POST /escrow/{type}/dispute-escrow
+     * Returns unsigned XDR that must be signed by the signer.
      */
-    async refundEscrow(
+    async disputeEscrow(
         contractId: string,
+        signerAddress: string,
         escrowType: 'single-release' | 'multi-release' = 'single-release',
-    ): Promise<TrustlessRefundResult> {
+    ): Promise<{ unsignedTransaction?: string; transaction_hash?: string }> {
         try {
-            this.logger.debug(`Refunding escrow: ${contractId}`);
+            this.logger.debug(`Disputing escrow: ${contractId} (signer: ${signerAddress})`);
 
             const payload = {
                 contractId,
+                signer: signerAddress,
             };
 
-            const response = await this.post<TrustlessRefundResult>(
-                `/escrow/${escrowType}/refund`,
+            const response = await this.post<{ unsignedTransaction?: string; transaction_hash?: string }>(
+                `/escrow/${escrowType}/dispute-escrow`,
                 payload,
             );
 
-            this.logger.log(
-                `Escrow ${contractId} refund initiated. Tx: ${response.transaction_hash}`,
-            );
-
+            this.logger.log(`Escrow ${contractId} dispute initiated`);
             return response;
         } catch (error: any) {
-            this.logger.error(`Failed to refund escrow ${contractId}:`, error);
+            this.logger.error(`Failed to dispute escrow ${contractId}:`, error);
+            throw this.handleApiError(error);
+        }
+    }
+
+    /**
+     * Step 2 of refund: Resolve dispute with 100% to buyer.
+     * Called after the dispute transaction has been signed and submitted.
+     * TW API: POST /escrow/{type}/resolve-dispute
+     */
+    async resolveDisputeForRefund(
+        contractId: string,
+        disputeResolverAddress: string,
+        buyerAddress: string,
+        amount: string,
+        escrowType: 'single-release' | 'multi-release' = 'single-release',
+    ): Promise<{ unsignedTransaction?: string; transaction_hash?: string }> {
+        try {
+            this.logger.debug(`Step 2/2: Resolving dispute for refund on escrow ${contractId}`);
+
+            // TW expects USDC amounts (not stroops) — consistent with deploy and fund
+            const amountUsdc = parseFloat(amount);
+
+            const payload = {
+                contractId,
+                disputeResolver: disputeResolverAddress,
+                distributions: [
+                    {
+                        address: buyerAddress,
+                        amount: amountUsdc,
+                    },
+                ],
+            };
+
+            const response = await this.post<{ unsignedTransaction?: string; transaction_hash?: string }>(
+                `/escrow/${escrowType}/resolve-dispute`,
+                payload,
+            );
+
+            this.logger.log(`Dispute resolved for refund on escrow ${contractId}`);
+            return response;
+        } catch (error: any) {
+            this.logger.error(`Failed to resolve dispute for refund on escrow ${contractId}:`, error);
             throw this.handleApiError(error);
         }
     }

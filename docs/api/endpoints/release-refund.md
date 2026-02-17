@@ -68,19 +68,23 @@ Content-Type: application/json
 
 ## POST /orders/{orderId}/resolution/refund
 
-Refunds escrow funds to the buyer. In crypto-native mode, this calls the TW refund endpoint and signs with the buyer's wallet.
+Refunds escrow funds to the buyer. In crypto-native mode, this executes a **2-step on-chain process** since Trustless Work has no direct refund endpoint:
+
+1. **Dispute escrow** -- Buyer disputes the contract (signed by buyer's wallet)
+2. **Resolve dispute** -- Platform resolves with 100% distribution back to buyer (signed by platform wallet as `disputeResolver`)
+
+> **Why 2 steps?** Trustless Work smart contracts enforce that `disputeResolver` cannot be the same address as the disputer. The Orchestrator uses a dedicated platform wallet (`PLATFORM_USER_ID`) as `disputeResolver`, separate from buyer and seller.
 
 ### Request
 
 ```http
 POST /api/v1/orders/ord_abc123/resolution/refund
-x-api-key: ohk_live_xxx
+Authorization: Bearer ohk_live_xxx
 Content-Type: application/json
 ```
 
 ```json
 {
-    "requestedBy": "usr_buyer123",
     "reason": "Service not delivered"
 }
 ```
@@ -98,6 +102,25 @@ Content-Type: application/json
     }
 }
 ```
+
+### What Happens Internally
+
+```
+1. Validate order is IN_PROGRESS with FUNDED escrow
+2. Get buyer and platform Stellar addresses
+3. Call TW: dispute-escrow (buyer signs XDR)
+4. Call TW: resolve-dispute with 100% to buyer (platform signs XDR as disputeResolver)
+5. Credit buyer's internal balance
+6. Transition order: REFUND_REQUESTED -> CLOSED
+7. Emit events: order.refund_requested, order.refunded, order.closed
+```
+
+### Signer Roles (Refund)
+
+| Transaction | Signer | TW Role |
+|-------------|--------|---------|
+| dispute-escrow | Buyer | approver (the disputer) |
+| resolve-dispute | Platform | disputeResolver |
 
 ### Emitted Events
 

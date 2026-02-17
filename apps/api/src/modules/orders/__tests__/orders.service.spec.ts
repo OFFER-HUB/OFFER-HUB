@@ -5,6 +5,7 @@ import { OrdersService } from '../orders.service';
 import { PrismaService } from '../../database/prisma.service';
 import { BalanceService } from '../../balance/balance.service';
 import { EscrowClient } from '../../../providers/trustless-work/clients/escrow.client';
+import { TrustlessWorkConfig } from '../../../providers/trustless-work/trustless-work.config';
 import { PAYMENT_PROVIDER } from '../../../providers/payment/payment-provider.interface';
 import type { CreateOrderDto, MilestoneDto } from '../dto';
 import {
@@ -160,6 +161,12 @@ describe('OrdersService', () => {
                     useValue: {
                         createEscrow: jest.fn(),
                         fundEscrow: jest.fn(),
+                    },
+                },
+                {
+                    provide: TrustlessWorkConfig,
+                    useValue: {
+                        platformUserId: 'platform-user-1',
                     },
                 },
                 {

@@ -12,6 +12,9 @@ export class TrustlessWorkConfig {
     readonly webhookSecret: string;
     readonly timeout: number;
 
+    // Platform identity (wallet used as disputeResolver / platformAddress)
+    readonly platformUserId: string;
+
     // Stellar Configuration
     readonly stellarNetwork: 'testnet' | 'mainnet';
     readonly stellarHorizonUrl: string;
@@ -24,6 +27,9 @@ export class TrustlessWorkConfig {
         this.apiUrl = this.getEnv('TRUSTLESS_API_URL', 'https://api.trustlesswork.com/v1');
         this.webhookSecret = this.getRequiredEnv('TRUSTLESS_WEBHOOK_SECRET');
         this.timeout = parseInt(this.getEnv('TRUSTLESS_TIMEOUT_MS', '60000'), 10);
+
+        // Platform identity
+        this.platformUserId = this.getRequiredEnv('PLATFORM_USER_ID');
 
         // Stellar Configuration
         const network = this.getEnv('STELLAR_NETWORK', 'testnet');

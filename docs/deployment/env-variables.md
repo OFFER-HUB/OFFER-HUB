@@ -176,6 +176,7 @@ node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 | `TRUSTLESS_API_KEY` | Yes | `tw_xxx` | Trustless Work API key |
 | `TRUSTLESS_WEBHOOK_SECRET` | Recommended | `tws_xxx` | HMAC secret for webhook verification |
 | `TRUSTLESS_API_URL` | No | Auto | Override API base URL |
+| `PLATFORM_USER_ID` | Yes | `usr_xxx` | Platform user ID whose wallet is used as `disputeResolver` and `platformAddress` in escrow contracts |
 
 ### Getting Credentials
 
@@ -337,6 +338,9 @@ WALLET_ENCRYPTION_KEY=           # Generate: node -e "console.log(require('crypt
 # Trustless Work
 TRUSTLESS_API_KEY=
 TRUSTLESS_WEBHOOK_SECRET=
+
+# Platform Identity (wallet used as disputeResolver and platformAddress in escrow)
+PLATFORM_USER_ID=
 
 # Stellar
 STELLAR_NETWORK=testnet
