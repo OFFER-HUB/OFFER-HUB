@@ -10,8 +10,6 @@ import {
     mapTrustlessStatus,
 } from '../types/trustless-work.types';
 import { CreateEscrowDto } from '../dto/escrow.dto';
-import { ReleaseDto, ReleaseMode } from '../dto/release.dto';
-import { RefundDto, RefundMode } from '../dto/refund.dto';
 import { DisputeResolutionDto } from '../dto/dispute-resolution.dto';
 import { orchestratorToStellar, toStroops, ERROR_CODES } from '@offerhub/shared';
 import Big from 'big.js';
@@ -62,14 +60,14 @@ export class EscrowClient {
             const hasMilestones = data.milestones && data.milestones.length > 1;
             const escrowType = hasMilestones ? 'multi-release' : 'single-release';
 
-            // Convert amounts to Stellar format (6 decimals) and then to stroops
-            const amountStroops = parseInt(toStroops(orchestratorToStellar(data.amount)));
+            // TW API expects amount in USDC (not stroops) — TW converts internally
+            const amount = parseFloat(data.amount);
 
             // Build milestones according to Trustless Work schema
             const milestones = hasMilestones
                 ? data.milestones?.map((m) => ({
                       description: m.title || 'Milestone',
-                      amount: parseInt(toStroops(orchestratorToStellar(m.amount))),
+                      amount: parseFloat(m.amount),
                       receiver: data.seller_address,
                   }))
                 : [
@@ -96,7 +94,7 @@ export class EscrowClient {
                     disputeResolver: data.buyer_address, // Buyer resolves disputes
                     receiver: data.seller_address, // Seller receives funds
                 },
-                amount: amountStroops,
+                amount: amount,
                 platformFee: (data.metadata as any)?.platformFee || 5, // Platform fee percentage (must be > 0)
                 milestones: milestones,
                 trustline: {
@@ -133,28 +131,46 @@ export class EscrowClient {
      * @param signedXdr XDR transaction signed by user's wallet
      * @returns Transaction submission result
      */
-    async sendTransaction(signedXdr: string): Promise<TrustlessSendTransactionResponse> {
-        try {
-            this.logger.debug('Submitting signed transaction to Stellar');
+    async sendTransaction(signedXdr: string, maxRetries = 3): Promise<TrustlessSendTransactionResponse> {
+        let lastError: any;
 
-            const response = await this.post<TrustlessSendTransactionResponse>(
-                '/helper/send-transaction',
-                {
-                    signedXdr,
-                },
-            );
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                this.logger.debug(`Submitting signed transaction to Stellar (attempt ${attempt}/${maxRetries})`);
 
-            if (response.status === 'SUCCESS') {
-                this.logger.log('Transaction submitted successfully to Stellar');
-            } else {
-                this.logger.error('Transaction submission failed:', response.message);
+                const response = await this.post<TrustlessSendTransactionResponse>(
+                    '/helper/send-transaction',
+                    {
+                        signedXdr,
+                    },
+                );
+
+                if (response.status === 'SUCCESS') {
+                    this.logger.log(`Transaction submitted successfully: contractId=${response.contractId}`);
+                } else {
+                    this.logger.error('Transaction submission failed:', response.message);
+                }
+
+                return response;
+            } catch (error: any) {
+                lastError = error;
+                const errorMsg = JSON.stringify(error.details ?? error.message ?? '');
+                const isRetryable = errorMsg.includes('resultMetaXdr') ||
+                    errorMsg.includes('not be complete yet');
+
+                if (isRetryable && attempt < maxRetries) {
+                    const delay = attempt * 3000; // 3s, 6s, 9s
+                    this.logger.warn(`Transaction not ready, retrying in ${delay / 1000}s (attempt ${attempt}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    continue;
+                }
+
+                this.logger.error('Failed to send transaction:', error);
+                throw this.handleApiError(error);
             }
-
-            return response;
-        } catch (error: any) {
-            this.logger.error('Failed to send transaction:', error);
-            throw this.handleApiError(error);
         }
+
+        throw this.handleApiError(lastError);
     }
 
     /**
@@ -177,17 +193,15 @@ export class EscrowClient {
      * Fund escrow contract
      * Uses /escrow/{type}/fund-escrow endpoint
      */
-    async fundEscrow(contractId: string, amount: string, escrowType: 'single-release' | 'multi-release' = 'single-release'): Promise<TrustlessFundingResult> {
+    async fundEscrow(contractId: string, amount: string, signer: string, escrowType: 'single-release' | 'multi-release' = 'single-release'): Promise<TrustlessFundingResult> {
         try {
-            this.logger.debug(`Funding escrow: ${contractId} with ${amount}`);
+            this.logger.debug(`Funding escrow: ${contractId} with ${amount} USDC (signer: ${signer})`);
 
-            // Convert amount to stroops
-            const amountStroops = toStroops(orchestratorToStellar(amount));
-
+            // TW fund-escrow expects amount in USDC (not stroops) — TW converts internally
             const payload = {
                 contractId,
-                amount: amountStroops,
-                currency: 'USDC',
+                amount: parseFloat(amount),
+                signer,
             };
 
             const response = await this.post<TrustlessFundingResult>(
@@ -207,35 +221,23 @@ export class EscrowClient {
     }
 
     /**
-     * Release escrow funds (full or partial)
-     * Uses /escrow/{type}/release-funds or /escrow/{type}/release-milestone-funds
+     * Release escrow funds.
+     * TW API expects: { contractId, releaseSigner }
      */
     async releaseEscrow(
         contractId: string,
-        data: ReleaseDto,
+        releaseSigner: string,
         escrowType: 'single-release' | 'multi-release' = 'single-release',
     ): Promise<TrustlessReleaseResult> {
         try {
-            this.logger.debug(`Releasing escrow: ${contractId}`, data);
+            this.logger.debug(`Releasing escrow: ${contractId}, signer: ${releaseSigner}`);
 
-            const payload: any = {
+            const payload = {
                 contractId,
-                mode: data.mode,
-                reason: data.reason,
+                releaseSigner,
             };
 
-            if (data.mode === ReleaseMode.PARTIAL && data.amount) {
-                payload.amount = toStroops(orchestratorToStellar(data.amount));
-            }
-
-            // Use milestone-specific endpoint if milestone_ref is provided
-            const endpoint = data.milestone_ref
-                ? `/escrow/${escrowType}/release-milestone-funds`
-                : `/escrow/${escrowType}/release-funds`;
-
-            if (data.milestone_ref) {
-                payload.milestoneRef = data.milestone_ref;
-            }
+            const endpoint = `/escrow/${escrowType}/release-funds`;
 
             const response = await this.post<TrustlessReleaseResult>(endpoint, payload);
 
@@ -251,23 +253,106 @@ export class EscrowClient {
     }
 
     /**
-     * Refund escrow funds (full or partial)
+     * Change milestone status (marks escrow as completed in TW).
+     * Must be called before release-funds.
+     * TW API: POST /escrow/{type}/change-milestone-status
      */
-    async refundEscrow(contractId: string, data: RefundDto): Promise<TrustlessRefundResult> {
+    async changeMilestoneStatus(
+        contractId: string,
+        milestoneIndex: string,
+        newStatus: string,
+        serviceProvider: string,
+        escrowType: 'single-release' | 'multi-release' = 'single-release',
+    ): Promise<{ unsignedTransaction?: string }> {
         try {
-            this.logger.debug(`Refunding escrow: ${contractId}`, data);
+            this.logger.debug(
+                `Changing milestone ${milestoneIndex} status to "${newStatus}" for escrow: ${contractId}`,
+            );
 
-            const payload: any = {
-                mode: data.mode,
-                reason: data.reason,
+            const payload = {
+                contractId,
+                milestoneIndex,
+                newStatus,
+                serviceProvider,
             };
 
-            if (data.mode === RefundMode.PARTIAL && data.amount) {
-                payload.amount = toStroops(orchestratorToStellar(data.amount));
-            }
+            const response = await this.post<{ unsignedTransaction?: string }>(
+                `/escrow/${escrowType}/change-milestone-status`,
+                payload,
+            );
+
+            this.logger.log(
+                `Milestone ${milestoneIndex} status changed to "${newStatus}" for escrow ${contractId}`,
+            );
+
+            return response;
+        } catch (error: any) {
+            this.logger.error(
+                `Failed to change milestone status for escrow ${contractId}:`,
+                error,
+            );
+            throw this.handleApiError(error);
+        }
+    }
+
+    /**
+     * Approve a milestone (buyer confirms work is done).
+     * Must be called after change-milestone-status and before release-funds.
+     * TW API: POST /escrow/{type}/approve-milestone
+     */
+    async approveMilestone(
+        contractId: string,
+        milestoneIndex: string,
+        approver: string,
+        escrowType: 'single-release' | 'multi-release' = 'single-release',
+    ): Promise<{ unsignedTransaction?: string }> {
+        try {
+            this.logger.debug(
+                `Approving milestone ${milestoneIndex} for escrow: ${contractId}`,
+            );
+
+            const payload = {
+                contractId,
+                milestoneIndex,
+                approver,
+            };
+
+            const response = await this.post<{ unsignedTransaction?: string }>(
+                `/escrow/${escrowType}/approve-milestone`,
+                payload,
+            );
+
+            this.logger.log(
+                `Milestone ${milestoneIndex} approved for escrow ${contractId}`,
+            );
+
+            return response;
+        } catch (error: any) {
+            this.logger.error(
+                `Failed to approve milestone for escrow ${contractId}:`,
+                error,
+            );
+            throw this.handleApiError(error);
+        }
+    }
+
+    /**
+     * Refund escrow funds.
+     * TW API pattern: POST /escrow/single-release/refund with { contractId }
+     */
+    async refundEscrow(
+        contractId: string,
+        escrowType: 'single-release' | 'multi-release' = 'single-release',
+    ): Promise<TrustlessRefundResult> {
+        try {
+            this.logger.debug(`Refunding escrow: ${contractId}`);
+
+            const payload = {
+                contractId,
+            };
 
             const response = await this.post<TrustlessRefundResult>(
-                `/escrow/${contractId}/refund`,
+                `/escrow/${escrowType}/refund`,
                 payload,
             );
 
@@ -290,7 +375,7 @@ export class EscrowClient {
         contractId: string,
         resolution: DisputeResolutionDto,
         escrowType: 'single-release' | 'multi-release' = 'single-release',
-    ): Promise<{ success: boolean; transaction_hash: string }> {
+    ): Promise<{ success: boolean; unsignedTransaction?: string; transaction_hash?: string }> {
         try {
             this.logger.debug(`Resolving dispute for escrow: ${contractId}`, resolution);
 
@@ -306,7 +391,7 @@ export class EscrowClient {
                 refundAmount: refundAmountStroops,
             };
 
-            const response = await this.post<{ success: boolean; transaction_hash: string }>(
+            const response = await this.post<{ success: boolean; unsignedTransaction?: string; transaction_hash?: string }>(
                 `/escrow/${escrowType}/resolve-dispute`,
                 payload,
             );
@@ -424,6 +509,8 @@ export class EscrowClient {
      */
     private async handleHttpError(response: Response): Promise<Error> {
         const body = await response.json().catch(() => ({}));
+
+        this.logger.error(`Trustless Work API ${response.status} response body: ${JSON.stringify(body)}`);
 
         let code: string = ERROR_CODES.PROVIDER_ERROR;
         let message = `Trustless Work API error: ${response.status}`;

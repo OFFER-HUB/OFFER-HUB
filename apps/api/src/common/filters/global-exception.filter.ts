@@ -13,6 +13,7 @@ import {
     ERROR_MESSAGES,
     ErrorCode,
 } from '@offerhub/shared';
+import { IdempotencyReplayException } from '../exceptions/idempotency-replay.exception';
 
 interface StandardErrorResponse {
     error: {
@@ -30,6 +31,13 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         const ctx = host.switchToHttp();
         const response = ctx.getResponse<Response>();
         const request = ctx.getRequest<Request>();
+
+        // Handle idempotency replay — return the cached response directly
+        if (exception instanceof IdempotencyReplayException) {
+            response.setHeader('Idempotency-Replay', 'true');
+            response.status(exception.responseData.status).json(exception.responseData.body);
+            return;
+        }
 
         const requestId = request.headers['x-request-id'] as string | undefined;
         const { status, errorResponse } = this.buildErrorResponse(exception, requestId);

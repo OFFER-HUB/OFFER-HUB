@@ -1,0 +1,30 @@
+services:
+  postgres-e2e:
+    image: postgres:15-alpine
+    container_name: offerhub-e2e-postgres
+    environment:
+      POSTGRES_USER: e2e_user
+      POSTGRES_PASSWORD: e2e_password
+      POSTGRES_DB: offerhub_e2e
+    ports:
+      - '5433:5432'
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U e2e_user -d offerhub_e2e']
+      interval: 2s
+      timeout: 5s
+      retries: 10
+
+  redis-e2e:
+    image: redis:7-alpine
+    container_name: offerhub-e2e-redis
+    ports:
+      - '6380:6379'
+    tmpfs:
+      - /data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 5s
+      retries: 10

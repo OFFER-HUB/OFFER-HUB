@@ -18,7 +18,7 @@ export const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
     [OrderStatus.ORDER_CREATED]: [OrderStatus.FUNDS_RESERVED, OrderStatus.CLOSED],
     [OrderStatus.FUNDS_RESERVED]: [OrderStatus.ESCROW_CREATING, OrderStatus.CLOSED],
     [OrderStatus.ESCROW_CREATING]: [OrderStatus.ESCROW_FUNDING],
-    [OrderStatus.ESCROW_FUNDING]: [OrderStatus.ESCROW_FUNDED],
+    [OrderStatus.ESCROW_FUNDING]: [OrderStatus.ESCROW_FUNDED, OrderStatus.IN_PROGRESS],
     [OrderStatus.ESCROW_FUNDED]: [OrderStatus.IN_PROGRESS],
     [OrderStatus.IN_PROGRESS]: [
         OrderStatus.RELEASE_REQUESTED,
@@ -27,7 +27,7 @@ export const ORDER_TRANSITIONS: Record<OrderStatus, OrderStatus[]> = {
     ],
     [OrderStatus.RELEASE_REQUESTED]: [OrderStatus.RELEASED],
     [OrderStatus.REFUND_REQUESTED]: [OrderStatus.REFUNDED],
-    [OrderStatus.DISPUTED]: [OrderStatus.RELEASED, OrderStatus.REFUNDED],
+    [OrderStatus.DISPUTED]: [OrderStatus.RELEASED, OrderStatus.REFUNDED, OrderStatus.RELEASE_REQUESTED, OrderStatus.REFUND_REQUESTED],
     [OrderStatus.RELEASED]: [OrderStatus.CLOSED],
     [OrderStatus.REFUNDED]: [OrderStatus.CLOSED],
     [OrderStatus.CLOSED]: [],

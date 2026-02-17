@@ -7,6 +7,7 @@ import {
     OrderFundsReservedPayload,
     OrderEscrowCreatingPayload,
     OrderEscrowFundingPayload,
+    OrderEscrowFundedPayload,
     OrderCanceledPayload,
 } from '../events/types';
 import type { Order, Escrow, Milestone } from '@prisma/client';
@@ -432,16 +433,40 @@ export class OrdersService {
                 buyerAddress,
             );
 
+            // Sign the unsigned XDR with buyer's invisible wallet and submit to Stellar
+            // Per Trustless Work docs: all write operations return unsigned XDRs
+            let contractId: string | undefined;
+            if (escrowResponse.unsignedTransaction) {
+                const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                    order.buyerId,
+                    escrowResponse.unsignedTransaction,
+                );
+                const sendResult = await this.escrowClient.sendTransaction(signedXdr);
+                contractId = sendResult.contractId;
+                this.logger.log(`Escrow deployed for order ${orderId}: contractId=${contractId}`);
+            }
+
+            const escrowStatus = contractId ? EscrowStatus.CREATED : EscrowStatus.CREATING;
+            const orderStatus = contractId ? OrderStatus.ESCROW_FUNDING : OrderStatus.ESCROW_CREATING;
+
             const escrow = await this.prisma.escrow.create({
                 data: {
                     id: generateEscrowId(),
                     orderId: order.id,
-                    trustlessContractId: escrowResponse.contractId,
-                    status: EscrowStatus.CREATING,
+                    trustlessContractId: contractId ?? null,
+                    status: escrowStatus,
                     amount: order.amount,
                     terms: milestonesData ? { milestones_required: true } : Prisma.JsonNull,
                 },
             });
+
+            // Update order to ESCROW_FUNDING if contract was deployed successfully
+            if (contractId) {
+                await this.prisma.order.update({
+                    where: { id: orderId },
+                    data: { status: OrderStatus.ESCROW_FUNDING },
+                });
+            }
 
             this.eventBus.emit<OrderEscrowCreatingPayload>({
                 eventType: EVENT_CATALOG.ORDER_ESCROW_CREATING,
@@ -455,7 +480,7 @@ export class OrdersService {
                 metadata: EventBusService.createMetadata({ userId: order.buyerId }),
             });
 
-            this.logger.log(`Escrow created for order ${orderId}: ${escrow.id}`);
+            this.logger.log(`Escrow created for order ${orderId}: ${escrow.id} (order=${orderStatus})`);
         } catch (error) {
             this.logger.error(`Failed to create escrow for order ${orderId}:`, error);
 
@@ -522,6 +547,10 @@ export class OrdersService {
 
         const escrowType = order.milestones?.length ? 'multi-release' : 'single-release';
 
+        // Get buyer's Stellar address for signing
+        const buyerDeposit = await this.paymentProvider.getDepositInfo(order.buyerId);
+        const buyerAddress = buyerDeposit.address!;
+
         try {
             await this.balanceService.deductReserved(order.buyerId, {
                 amount: order.amount,
@@ -530,17 +559,44 @@ export class OrdersService {
                 description: `Escrow funded for order ${order.id}`,
             });
 
-            await this.escrowClient.fundEscrow(
+            const fundResult = await this.escrowClient.fundEscrow(
                 order.escrow.trustlessContractId!,
                 order.amount,
+                buyerAddress,
                 escrowType,
             );
 
+            // Sign and submit funding transaction if unsigned XDR returned
+            // Per Trustless Work docs: all write operations return unsigned XDRs
+            if (fundResult.unsignedTransaction) {
+                const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                    order.buyerId,
+                    fundResult.unsignedTransaction,
+                );
+                await this.escrowClient.sendTransaction(signedXdr);
+                this.logger.log(`Escrow funding transaction signed and submitted for order ${orderId}`);
+            }
+
+            const fundedAt = new Date();
+
             await this.prisma.$transaction(
                 async (tx) => {
+                    // Escrow → FUNDED
                     await tx.escrow.update({
                         where: { id: order.escrow!.id },
-                        data: { status: EscrowStatus.FUNDING },
+                        data: {
+                            status: EscrowStatus.FUNDED,
+                            fundedAt,
+                        },
+                    });
+
+                    // Order → ESCROW_FUNDED → IN_PROGRESS
+                    // TW has no webhooks, so we transition immediately after successful sendTransaction
+                    await tx.order.update({
+                        where: { id: orderId },
+                        data: {
+                            status: OrderStatus.IN_PROGRESS,
+                        },
                     });
 
                     await tx.auditLog.create({
@@ -548,11 +604,11 @@ export class OrdersService {
                             id: generateAuditLogId(),
                             marketplaceId: 'system',
                             userId: order.buyerId,
-                            action: 'ESCROW_FUNDING',
+                            action: 'ESCROW_FUNDED',
                             resourceType: 'escrow',
                             resourceId: order.escrow!.id,
                             payloadBefore: { status: EscrowStatus.CREATED },
-                            payloadAfter: { status: EscrowStatus.FUNDING },
+                            payloadAfter: { status: EscrowStatus.FUNDED, fundedAt: fundedAt.toISOString() },
                             actorType: 'system',
                             result: 'SUCCESS',
                         },
@@ -564,20 +620,21 @@ export class OrdersService {
                 },
             );
 
-            this.eventBus.emit<OrderEscrowFundingPayload>({
-                eventType: EVENT_CATALOG.ORDER_ESCROW_FUNDING,
+            this.eventBus.emit<OrderEscrowFundedPayload>({
+                eventType: EVENT_CATALOG.ORDER_ESCROW_FUNDED,
                 aggregateId: orderId,
                 aggregateType: 'Order',
                 payload: {
                     orderId,
                     escrowId: order.escrow.id,
-                    amount: order.amount,
                     trustlessContractId: order.escrow.trustlessContractId!,
+                    amount: order.amount,
+                    fundedAt: fundedAt.toISOString(),
                 },
                 metadata: EventBusService.createMetadata({ userId: order.buyerId }),
             });
 
-            this.logger.log(`Escrow funded for order ${orderId}`);
+            this.logger.log(`Escrow funded for order ${orderId}, order transitioned to IN_PROGRESS`);
         } catch (error) {
             this.logger.error(`Failed to fund escrow for order ${orderId}:`, error);
 
