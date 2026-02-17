@@ -118,6 +118,34 @@ sequenceDiagram
     ORC->>ORC: Buyer balance += amount
     ORC->>ORC: Order = CLOSED
     ORC-->>MP: { status: CLOSED }
+
+    Note over MP,ST: 7. SPLIT RESOLUTION (dispute → distribute to both parties)
+    MP->>ORC: POST /disputes/{id}/resolve (decision: SPLIT)
+
+    rect rgb(255, 240, 240)
+        Note over ORC,ST: Step 7a: Dispute Escrow (buyer signs)
+        ORC->>TW: POST /escrow/.../dispute-escrow
+        TW-->>ORC: { unsignedTransaction }
+        ORC->>ORC: Sign with buyer wallet
+        ORC->>TW: POST /helper/send-transaction
+        TW->>ST: Flag escrow as disputed
+    end
+
+    rect rgb(240, 240, 255)
+        Note over ORC,ST: Step 7b: Resolve Dispute with split distributions (platform signs)
+        ORC->>TW: POST /escrow/.../resolve-dispute
+        Note right of ORC: distributions: [{seller, $X}, {buyer, $Y}]
+        TW-->>ORC: { unsignedTransaction }
+        ORC->>ORC: Sign with platform wallet (disputeResolver)
+        ORC->>TW: POST /helper/send-transaction
+        TW->>ST: Distribute USDC to both parties
+        ST-->>TW: confirmed
+    end
+
+    ORC->>ORC: Seller balance += releaseAmount
+    ORC->>ORC: Buyer balance += refundAmount
+    ORC->>ORC: Order = CLOSED
+    ORC-->>MP: { status: CLOSED }
 ```
 
 ## Order State Transitions
@@ -274,6 +302,8 @@ When deploying an escrow contract, the Orchestrator assigns roles as follows:
 | Release funds | `POST /escrow/single-release/release-funds` | Buyer |
 | Dispute escrow (refund step 1) | `POST /escrow/single-release/dispute-escrow` | Buyer |
 | Resolve dispute (refund step 2) | `POST /escrow/single-release/resolve-dispute` | Platform |
+| Dispute escrow (split step 1) | `POST /escrow/single-release/dispute-escrow` | Buyer |
+| Resolve dispute with split (split step 2) | `POST /escrow/single-release/resolve-dispute` | Platform |
 | Submit signed tx | `POST /helper/send-transaction` | N/A |
 
 ## Amount Format
@@ -423,6 +453,29 @@ curl -s -X POST $BASE/orders/$ORDER/resolution/refund \
 - Order: `ord_pQ85Prp0TPhyHK9JejuwDP8xsoGyf1Og`
 - Contract: `CBL3SWJMMSE3KPIQDZJ7R4VDNWL3E6PWPBVOPSJTYKEW2GP2NYJWLHVE`
 - Buyer wallet: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
+- Platform wallet (disputeResolver): `GDGLXLBOS4DQYDIC3XAHUXXWWEB4OFPFHG2D2KL6AHTZ6W3KC2VTZW4J`
+
+### Dispute → SPLIT Resolution Flow -- Verified 2026-02-17
+
+| Step | Endpoint | Result |
+|------|----------|--------|
+| Create order | `POST /api/v1/orders` | `ORDER_CREATED` |
+| Reserve funds | `POST /orders/{id}/reserve` | `FUNDS_RESERVED` |
+| Create escrow | `POST /orders/{id}/escrow` | `ESCROW_FUNDING` (contract: `CAKRHV...`) |
+| Fund escrow | `POST /orders/{id}/escrow/fund` | `IN_PROGRESS` (escrow: `FUNDED`) |
+| Open dispute | `POST /api/v1/disputes` | `OPEN` (openedBy: `BUYER`) |
+| Assign dispute | `POST /disputes/{id}/assign` | `UNDER_REVIEW` |
+| Resolve SPLIT | `POST /disputes/{id}/resolve` | `RESOLVED` (decision: `SPLIT`) |
+| **Final state** | -- | Order: `CLOSED`, Escrow: `RELEASED` |
+
+**Split details:** $6.00 to seller + $4.00 refund to buyer (from $10.00 total)
+
+**Test data:**
+- Order: `ord_hvfMNSBGzdiFDzS89qZMmAz06sMU8BJs`
+- Dispute: `dsp_VbusoJ8bzdOwncUjKvGKQS79YnA6RF0G`
+- Contract: `CAKRHVIA7KKNXVC5XDSWIKDAF4HDMDJJ2B6DNUYUTQEPUJP5YN7E5YH3`
+- Buyer wallet: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
+- Seller wallet: `GDWXCMZTP6DVDBJY54NSNPH4CBOEUMVRMSY2XRG4VBSDYORMHJK4QOC3`
 - Platform wallet (disputeResolver): `GDGLXLBOS4DQYDIC3XAHUXXWWEB4OFPFHG2D2KL6AHTZ6W3KC2VTZW4J`
 
 ### Unit Tests -- All Passing

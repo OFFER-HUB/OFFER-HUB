@@ -1220,6 +1220,9 @@ export class ResolutionService {
 
     /**
      * Execute split resolution for dispute.
+     * Uses the same 2-step TW pattern as refund:
+     *   Step 1: dispute-escrow (buyer signs)
+     *   Step 2: resolve-dispute with distributions to BOTH buyer and seller (platform signs)
      * @private
      */
     private async executeSplitResolution(
@@ -1233,16 +1236,24 @@ export class ResolutionService {
             `Executing split resolution for dispute ${dispute.id}: release=${releaseAmount}, refund=${refundAmount}`,
         );
 
-        // Calls escrowClient.resolveDispute() with split amounts + sign+send
         const escrowType =
             order.milestones && order.milestones.length > 1 ? 'multi-release' : 'single-release';
 
-        const disputeResult = await this.escrowClient.resolveDispute(
+        // Get buyer, seller, and platform wallet addresses
+        const [buyerDeposit, sellerDeposit, platformDeposit] = await Promise.all([
+            this.paymentProvider.getDepositInfo(order.buyerId),
+            this.paymentProvider.getDepositInfo(order.sellerId),
+            this.paymentProvider.getDepositInfo(this.twConfig.platformUserId),
+        ]);
+        const buyerAddress = buyerDeposit.address!;
+        const sellerAddress = sellerDeposit.address!;
+        const platformAddress = platformDeposit.address!;
+
+        // Step 1: Dispute the escrow (buyer signs — any party except disputeResolver can dispute)
+        this.logger.debug(`Split step 1/2: Disputing escrow for order ${order.id}`);
+        const disputeResult = await this.escrowClient.disputeEscrow(
             order.escrow!.trustlessContractId!,
-            {
-                release_amount: releaseAmount,
-                refund_amount: refundAmount,
-            },
+            buyerAddress,
             escrowType,
         );
 
@@ -1252,6 +1263,28 @@ export class ResolutionService {
                 disputeResult.unsignedTransaction,
             );
             await this.escrowClient.sendTransaction(signedXdr);
+            this.logger.log(`Split step 1/2: Escrow disputed for order ${order.id}`);
+        }
+
+        // Step 2: Resolve dispute with distributions to both buyer and seller (platform signs as disputeResolver)
+        this.logger.debug(`Split step 2/2: Resolving dispute with split for order ${order.id}`);
+        const resolveResult = await this.escrowClient.resolveDisputeWithSplit(
+            order.escrow!.trustlessContractId!,
+            platformAddress,
+            [
+                { address: sellerAddress, amount: parseFloat(releaseAmount) },
+                { address: buyerAddress, amount: parseFloat(refundAmount) },
+            ],
+            escrowType,
+        );
+
+        if (resolveResult.unsignedTransaction) {
+            const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                this.twConfig.platformUserId, // Platform signs as disputeResolver
+                resolveResult.unsignedTransaction,
+            );
+            await this.escrowClient.sendTransaction(signedXdr);
+            this.logger.log(`Split step 2/2: Dispute resolved with split for order ${order.id}`);
         }
 
         // Credit seller via creditAvailable

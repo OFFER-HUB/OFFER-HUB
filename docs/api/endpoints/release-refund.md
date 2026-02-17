@@ -171,6 +171,94 @@ Content-Type: application/json
 
 ---
 
+## POST /disputes/{disputeId}/resolve (SPLIT Decision)
+
+Resolves a dispute by splitting escrow funds between buyer and seller. Uses the same 2-step on-chain process as refund, but with **distributions to both parties** instead of 100% to one.
+
+1. **Dispute escrow** -- Buyer disputes the contract (signed by buyer's wallet)
+2. **Resolve dispute with distributions** -- Platform resolves with split amounts to buyer AND seller (signed by platform wallet as `disputeResolver`)
+
+### Request
+
+```http
+POST /api/v1/disputes/dsp_xxx/resolve
+x-api-key: ohk_live_xxx
+Content-Type: application/json
+```
+
+```json
+{
+    "decision": "SPLIT",
+    "release_amount": "6.00",
+    "refund_amount": "4.00",
+    "note": "Partial delivery — 60% work completed"
+}
+```
+
+> **Validation:** `release_amount + refund_amount` must equal the order's total `amount`.
+
+### Response
+
+```json
+{
+    "data": {
+        "success": true,
+        "data": {
+            "id": "dsp_xxx",
+            "status": "RESOLVED",
+            "resolutionDecision": "SPLIT",
+            "order": {
+                "id": "ord_xxx",
+                "status": "CLOSED"
+            },
+            "escrow": {
+                "status": "RELEASED",
+                "releasedAt": "2026-02-17T19:19:39.605Z"
+            }
+        }
+    }
+}
+```
+
+### What Happens Internally
+
+```
+1. Validate dispute is UNDER_REVIEW with IN_PROGRESS order
+2. Validate release_amount + refund_amount == order.amount
+3. Get buyer, seller, and platform Stellar addresses
+4. Call TW: dispute-escrow (buyer signs XDR)
+5. Call TW: resolve-dispute with distributions (platform signs XDR)
+   → distributions: [{seller, releaseAmount}, {buyer, refundAmount}]
+6. Credit seller's internal balance with release_amount
+7. Credit buyer's internal balance with refund_amount
+8. Transition: dispute RESOLVED, order CLOSED, escrow RELEASED
+9. Emit event: DISPUTE_RESOLVED (decision: SPLIT)
+```
+
+### Signer Roles (SPLIT)
+
+| Transaction | Signer | TW Role |
+|-------------|--------|---------|
+| dispute-escrow | Buyer | approver (the disputer) |
+| resolve-dispute | Platform | disputeResolver |
+
+### TW API Payload (resolve-dispute with distributions)
+
+```json
+{
+    "contractId": "CAKRHV...",
+    "disputeResolver": "GDGLXL...",
+    "distributions": [
+        { "address": "GDWXCM...", "amount": 6 },
+        { "address": "GCV24W...", "amount": 4 }
+    ]
+}
+```
+
+> **Note:** Amounts are in USDC (not stroops). TW converts internally.
+
+---
+
 ## Important Notes
 
 ### Crypto-Native Release Process
