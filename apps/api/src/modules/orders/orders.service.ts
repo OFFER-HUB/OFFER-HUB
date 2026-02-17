@@ -27,6 +27,7 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { BalanceService } from '../balance/balance.service';
 import { EscrowClient } from '../../providers/trustless-work/clients/escrow.client';
+import { TrustlessWorkConfig } from '../../providers/trustless-work/trustless-work.config';
 import { InsufficientFundsException } from '../balance/exceptions';
 import {
     OrderNotFoundException,
@@ -68,6 +69,7 @@ export class OrdersService {
         @Inject(PrismaService) private readonly prisma: PrismaService,
         @Inject(BalanceService) private readonly balanceService: BalanceService,
         @Inject(EscrowClient) private readonly escrowClient: EscrowClient,
+        @Inject(TrustlessWorkConfig) private readonly twConfig: TrustlessWorkConfig,
         @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
         @Inject(EventBusService) private readonly eventBus: EventBusService,
     ) { }
@@ -374,14 +376,16 @@ export class OrdersService {
             throw new Error('Both buyer and seller must have active payment accounts');
         }
 
-        // Get payment addresses for escrow
-        const [buyerDeposit, sellerDeposit] = await Promise.all([
+        // Get payment addresses for escrow (buyer, seller, platform)
+        const [buyerDeposit, sellerDeposit, platformDeposit] = await Promise.all([
             this.paymentProvider.getDepositInfo(order.buyerId),
             this.paymentProvider.getDepositInfo(order.sellerId),
+            this.paymentProvider.getDepositInfo(this.twConfig.platformUserId),
         ]);
 
         const buyerAddress = buyerDeposit.address!;
         const sellerAddress = sellerDeposit.address!;
+        const platformAddress = platformDeposit.address!;
 
         try {
             await this.prisma.$transaction(
@@ -431,6 +435,7 @@ export class OrdersService {
                     },
                 },
                 buyerAddress,
+                platformAddress,
             );
 
             // Sign the unsigned XDR with buyer's invisible wallet and submit to Stellar

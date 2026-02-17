@@ -92,6 +92,32 @@ sequenceDiagram
     ORC->>ORC: Seller balance += amount
     ORC->>ORC: Order = CLOSED
     ORC-->>MP: { status: CLOSED }
+
+    Note over MP,ST: 6. REFUND (alternative to release, 2-step process)
+    MP->>ORC: POST /orders/{id}/resolution/refund
+
+    rect rgb(255, 240, 240)
+        Note over ORC,ST: Step 6a: Dispute Escrow (buyer signs)
+        ORC->>TW: POST /escrow/.../dispute-escrow
+        TW-->>ORC: { unsignedTransaction }
+        ORC->>ORC: Sign with buyer wallet
+        ORC->>TW: POST /helper/send-transaction
+        TW->>ST: Flag escrow as disputed
+    end
+
+    rect rgb(255, 255, 240)
+        Note over ORC,ST: Step 6b: Resolve Dispute 100% to buyer (platform signs)
+        ORC->>TW: POST /escrow/.../resolve-dispute
+        TW-->>ORC: { unsignedTransaction }
+        ORC->>ORC: Sign with platform wallet (disputeResolver)
+        ORC->>TW: POST /helper/send-transaction
+        TW->>ST: Release USDC to buyer
+        ST-->>TW: confirmed
+    end
+
+    ORC->>ORC: Buyer balance += amount
+    ORC->>ORC: Order = CLOSED
+    ORC-->>MP: { status: CLOSED }
 ```
 
 ## Order State Transitions
@@ -209,14 +235,33 @@ POST /api/v1/orders/{id}/resolution/refund
 
 ```json
 {
-    "requestedBy": "usr_...",
     "reason": "Service not delivered"
 }
 ```
 
-Returns funds to buyer's balance.
+Trustless Work does **not** have a direct `/refund` endpoint. Refunds require a 2-step process:
+
+1. **Dispute escrow** -- Buyer disputes the contract (signed by buyer)
+2. **Resolve dispute** -- Platform resolves with 100% distribution to buyer (signed by platform as `disputeResolver`)
+
+This is why the escrow contract assigns the **platform wallet** as `disputeResolver` (not the buyer). TW enforces that the `disputeResolver` cannot be the same address as the disputer.
 
 **Response:** `{ status: "CLOSED" }`
+
+## Escrow Role Assignments
+
+When deploying an escrow contract, the Orchestrator assigns roles as follows:
+
+| TW Role | Assigned To | Purpose |
+|---------|-------------|---------|
+| `approver` | Buyer | Approves milestones |
+| `serviceProvider` | Seller | Delivers work, marks milestones |
+| `platformAddress` | Platform (`PLATFORM_USER_ID`) | Receives platform fees |
+| `releaseSigner` | Buyer | Authorizes fund release |
+| `disputeResolver` | Platform (`PLATFORM_USER_ID`) | Resolves disputes (must differ from disputer) |
+| `receiver` | Seller | Receives released funds |
+
+> **Important:** `disputeResolver` MUST be a different address from the buyer. If the buyer is the disputer and also the `disputeResolver`, the TW smart contract will reject the transaction with: `"The dispute resolver cannot dispute the escrow"`.
 
 ## Trustless Work API Endpoints Used
 
@@ -227,7 +272,8 @@ Returns funds to buyer's balance.
 | Mark milestone complete | `POST /escrow/single-release/change-milestone-status` | Seller |
 | Approve milestone | `POST /escrow/single-release/approve-milestone` | Buyer |
 | Release funds | `POST /escrow/single-release/release-funds` | Buyer |
-| Refund | `POST /escrow/single-release/refund` | Buyer |
+| Dispute escrow (refund step 1) | `POST /escrow/single-release/dispute-escrow` | Buyer |
+| Resolve dispute (refund step 2) | `POST /escrow/single-release/resolve-dispute` | Platform |
 | Submit signed tx | `POST /helper/send-transaction` | N/A |
 
 ## Amount Format
@@ -338,11 +384,53 @@ curl -s -X POST $BASE/orders/$ORDER/escrow -H "x-api-key: $API_KEY" | jq .
 # 4. Fund escrow
 curl -s -X POST $BASE/orders/$ORDER/escrow/fund -H "x-api-key: $API_KEY" | jq .
 
-# 5. Release
+# 5a. Release (pay seller)
 curl -s -X POST $BASE/orders/$ORDER/resolution/release \
   -H "Content-Type: application/json" \
   -H "x-api-key: $API_KEY" \
   -d '{"requestedBy": "usr_buyer", "reason": "Work completed"}' | jq .
+
+# 5b. OR Refund (return to buyer) -- 2-step: dispute + resolve
+curl -s -X POST $BASE/orders/$ORDER/resolution/refund \
+  -H "Content-Type: application/json" \
+  -H "x-api-key: $API_KEY" \
+  -d '{"reason": "Service not delivered"}' | jq .
+```
+
+## E2E Test Results (Stellar Testnet)
+
+### Release Flow -- Verified 2026-02-17
+
+| Step | Endpoint | Result |
+|------|----------|--------|
+| Create order | `POST /api/v1/orders` | `ORDER_CREATED` |
+| Reserve funds | `POST /orders/{id}/reserve` | `FUNDS_RESERVED` |
+| Create escrow | `POST /orders/{id}/escrow` | `ESCROW_FUNDING` |
+| Fund escrow | `POST /orders/{id}/escrow/fund` | `IN_PROGRESS` |
+| Release | `POST /orders/{id}/resolution/release` | `CLOSED` |
+
+### Refund Flow -- Verified 2026-02-17
+
+| Step | Endpoint | Result |
+|------|----------|--------|
+| Create order | `POST /api/v1/orders` | `ORDER_CREATED` |
+| Reserve funds | `POST /orders/{id}/reserve` | `FUNDS_RESERVED` |
+| Create escrow | `POST /orders/{id}/escrow` | `ESCROW_FUNDING` (contract: `CBL3SW...`) |
+| Fund escrow | `POST /orders/{id}/escrow/fund` | `IN_PROGRESS` (escrow: `FUNDED`) |
+| Refund | `POST /orders/{id}/resolution/refund` | `CLOSED` (dispute + resolve-dispute) |
+
+**Test data:**
+- Order: `ord_pQ85Prp0TPhyHK9JejuwDP8xsoGyf1Og`
+- Contract: `CBL3SWJMMSE3KPIQDZJ7R4VDNWL3E6PWPBVOPSJTYKEW2GP2NYJWLHVE`
+- Buyer wallet: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
+- Platform wallet (disputeResolver): `GDGLXLBOS4DQYDIC3XAHUXXWWEB4OFPFHG2D2KL6AHTZ6W3KC2VTZW4J`
+
+### Unit Tests -- All Passing
+
+```
+Test Suites: 17 passed, 17 total
+Tests:       154 passed, 154 total
+Time:        7.504 s
 ```
 
 ## Related Documentation
