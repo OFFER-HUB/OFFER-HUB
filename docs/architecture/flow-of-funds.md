@@ -181,19 +181,38 @@ flowchart TD
     B -->|4. CLOSED| A
 ```
 
-#### Phase 4c: Dispute + Resolution
+#### Phase 4c: Dispute + SPLIT Resolution (2 On-Chain Transactions)
+
+When a dispute is resolved with a SPLIT decision, funds are distributed to **both** buyer and seller according to the arbitrator's decision.
 
 ```mermaid
-flowchart LR
-    A[Buyer/Seller] -->|1. Open dispute| B[Marketplace]
-    B -->|2. POST /disputes| C[Orchestrator]
-    C -->|3. Freeze order| C
-    E[Support] -->|4. Review case| C
-    E -->|5. POST /resolve| C
-    C -->|6. Release/Refund/Split| D[Trustless Work]
-    D -->|7. Execute on-chain| F[Stellar]
-    C -->|8. Distribute balances| C
+flowchart TD
+    A[Support] -->|POST /disputes/id/resolve| B[Orchestrator]
+    B -->|"decision: SPLIT, release: $6, refund: $4"| B
+    B -->|1. dispute-escrow| C[Trustless Work]
+    C -->|unsigned XDR| B
+    B -->|sign with BUYER wallet| B
+    B -->|send-transaction| C
+    B -->|"2. resolve-dispute<br/>distributions: [{seller,$6},{buyer,$4}]"| C
+    C -->|unsigned XDR| B
+    B -->|sign with PLATFORM wallet| B
+    B -->|send-transaction| C
+    C -->|USDC split on-chain| D[Stellar]
+    B -->|3. Seller balance += $6| B
+    B -->|4. Buyer balance += $4| B
+    B -->|5. CLOSED| A
 ```
+
+**Money flow (SPLIT):**
+- Smart contract distributes USDC to both seller and buyer wallets
+- Orchestrator credits both internal balances
+- Order transitions to CLOSED, dispute to RESOLVED
+
+**Transaction signers:**
+1. `dispute-escrow` -- **Buyer** (approver role, the disputer)
+2. `resolve-dispute` -- **Platform** (disputeResolver role)
+
+> **Note:** The same 2-step on-chain process is used for refund (100% to buyer) and SPLIT (custom distribution to both). The only difference is the `distributions` array in the resolve-dispute payload.
 
 ---
 
@@ -272,6 +291,7 @@ sequenceDiagram
 | Fund escrow | 0.00 | -80.00 | +80.00 |
 | **After release** | **20.00** | **0.00** | **0.00** |
 | **After refund** | **100.00** | **0.00** | **0.00** |
+| **After SPLIT ($40 refund)** | **60.00** | **0.00** | **0.00** |
 
 ### Seller Balance
 

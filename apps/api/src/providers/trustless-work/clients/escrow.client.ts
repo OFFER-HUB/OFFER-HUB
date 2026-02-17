@@ -8,8 +8,7 @@ import {
     TrustlessReleaseResult,
 } from '../types/trustless-work.types';
 import { CreateEscrowDto } from '../dto/escrow.dto';
-import { DisputeResolutionDto } from '../dto/dispute-resolution.dto';
-import { orchestratorToStellar, toStroops, ERROR_CODES } from '@offerhub/shared';
+import { ERROR_CODES } from '@offerhub/shared';
 import Big from 'big.js';
 
 /**
@@ -409,36 +408,40 @@ export class EscrowClient {
     }
 
     /**
-     * Resolve dispute with split decision
-     * Uses /escrow/{type}/resolve-dispute endpoint
+     * Resolve dispute with split decision (distributions to multiple parties).
+     * Uses /escrow/{type}/resolve-dispute endpoint.
+     * TW expects: { contractId, disputeResolver, distributions: [{address, amount}] }
+     * Amounts must be in USDC (not stroops) — TW converts internally.
+     *
+     * @param contractId Escrow contract ID
+     * @param disputeResolverAddress Platform wallet address (must match escrow's disputeResolver role)
+     * @param distributions Array of {address, amount} for each party (buyer + seller)
+     * @param escrowType single-release or multi-release
      */
-    async resolveDispute(
+    async resolveDisputeWithSplit(
         contractId: string,
-        resolution: DisputeResolutionDto,
+        disputeResolverAddress: string,
+        distributions: Array<{ address: string; amount: number }>,
         escrowType: 'single-release' | 'multi-release' = 'single-release',
-    ): Promise<{ success: boolean; unsignedTransaction?: string; transaction_hash?: string }> {
+    ): Promise<{ unsignedTransaction?: string; transaction_hash?: string }> {
         try {
-            this.logger.debug(`Resolving dispute for escrow: ${contractId}`, resolution);
-
-            // Convert amounts to stroops
-            const releaseAmountStroops = toStroops(
-                orchestratorToStellar(resolution.release_amount),
+            this.logger.debug(
+                `Resolving dispute with split for escrow: ${contractId}, distributions: ${JSON.stringify(distributions)}`,
             );
-            const refundAmountStroops = toStroops(orchestratorToStellar(resolution.refund_amount));
 
             const payload = {
                 contractId,
-                releaseAmount: releaseAmountStroops,
-                refundAmount: refundAmountStroops,
+                disputeResolver: disputeResolverAddress,
+                distributions,
             };
 
-            const response = await this.post<{ success: boolean; unsignedTransaction?: string; transaction_hash?: string }>(
+            const response = await this.post<{ unsignedTransaction?: string; transaction_hash?: string }>(
                 `/escrow/${escrowType}/resolve-dispute`,
                 payload,
             );
 
             this.logger.log(
-                `Dispute resolved for escrow ${contractId}. Tx: ${response.transaction_hash}`,
+                `Dispute resolved with split for escrow ${contractId}. Tx: ${response.transaction_hash}`,
             );
 
             return response;
