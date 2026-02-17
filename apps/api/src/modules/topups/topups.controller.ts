@@ -35,7 +35,7 @@ import { TopUpStatus } from '@offerhub/shared';
 @UseGuards(ApiKeyGuard, ScopeGuard)
 export class TopUpsController {
     constructor(
-        private readonly topupsService: TopUpsService,
+        @Inject(TopUpsService) private readonly topupsService: TopUpsService,
         @Inject(AirtmConfig) private readonly airtmConfig: AirtmConfig,
     ) {}
 

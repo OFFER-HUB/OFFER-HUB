@@ -12,9 +12,7 @@ import { EscrowStatus } from '@offerhub/shared';
 export interface TrustlessInitializeEscrowResponse {
     status: 'SUCCESS' | 'FAILED';
     unsignedTransaction?: string; // XDR format - must be signed by user wallet
-    contractId: string; // Stellar contract address (C...)
-    escrow: TrustlessEscrowContract;
-    message: string;
+    message?: string;
 }
 
 /**
@@ -79,46 +77,55 @@ export interface TrustlessMilestone {
 }
 
 /**
- * Response from send transaction endpoint
+ * Response from send transaction endpoint.
+ * After a successful deploy, TW returns the contractId and full escrow object.
  */
 export interface TrustlessSendTransactionResponse {
     status: 'SUCCESS' | 'FAILED';
     message: string;
+    contractId?: string;
+    escrow?: TrustlessEscrowContract;
 }
 
 /**
- * Funding result from Trustless Work
+ * Funding result from Trustless Work.
+ * Per TW docs, all write operations return unsigned XDRs that must be signed and sent.
  */
 export interface TrustlessFundingResult {
     success: boolean;
     contract_id: string;
     status: TrustlessEscrowStatus;
-    transaction_hash: string; // Stellar tx hash
-    funded_at: string; // ISO timestamp
+    unsignedTransaction?: string; // XDR format - must be signed by funder's wallet
+    transaction_hash?: string; // Present after sign+send confirmation
+    funded_at?: string; // ISO timestamp
 }
 
 /**
- * Release result from Trustless Work
+ * Release result from Trustless Work.
+ * Per TW docs, returns unsigned XDR that must be signed by releaseSigner's wallet.
  */
 export interface TrustlessReleaseResult {
     success: boolean;
     contract_id: string;
     status: 'RELEASING' | 'RELEASED';
-    released_amount: string; // In stroops
-    remaining_amount: string; // In stroops
-    transaction_hash: string; // Stellar tx hash for verification
+    unsignedTransaction?: string; // XDR format - must be signed by releaseSigner's wallet
+    released_amount?: string; // In stroops
+    remaining_amount?: string; // In stroops
+    transaction_hash?: string; // Stellar tx hash (present after sign+send)
 }
 
 /**
- * Refund result from Trustless Work
+ * Refund result from Trustless Work.
+ * Per TW docs, returns unsigned XDR that must be signed by appropriate role's wallet.
  */
 export interface TrustlessRefundResult {
     success: boolean;
     contract_id: string;
     status: 'REFUNDING' | 'REFUNDED';
-    refunded_amount: string; // In stroops
-    remaining_amount: string; // In stroops
-    transaction_hash: string; // Stellar tx hash for verification
+    unsignedTransaction?: string; // XDR format - must be signed
+    refunded_amount?: string; // In stroops
+    remaining_amount?: string; // In stroops
+    transaction_hash?: string; // Stellar tx hash (present after sign+send)
 }
 
 /**

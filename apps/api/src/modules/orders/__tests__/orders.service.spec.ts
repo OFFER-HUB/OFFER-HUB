@@ -567,7 +567,13 @@ describe('OrdersService', () => {
                     escrow: {
                         update: jest.fn().mockResolvedValue({
                             id: 'escrow-1',
-                            status: 'FUNDING',
+                            status: 'FUNDED',
+                        }),
+                    },
+                    order: {
+                        update: jest.fn().mockResolvedValue({
+                            ...orderWithEscrow,
+                            status: 'IN_PROGRESS',
                         }),
                     },
                     auditLog: {
@@ -583,8 +589,8 @@ describe('OrdersService', () => {
                 amount: '100.00',
                 orderId: ORDER_ID,
             }));
-            expect(escrowClient.fundEscrow).toHaveBeenCalledWith(CONTRACT_ID, '100.00', 'multi-release');
-            expect(eventBus.emit).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'order.escrow_funding' }));
+            expect(escrowClient.fundEscrow).toHaveBeenCalledWith(CONTRACT_ID, '100.00', 'GTEST_STELLAR_ADDRESS', 'multi-release');
+            expect(eventBus.emit).toHaveBeenCalledWith(expect.objectContaining({ eventType: 'order.escrow_funded' }));
         });
 
         it('should reject if not in ESCROW_FUNDING', async () => {

@@ -2,123 +2,164 @@
 
 ## POST /orders/{order_id}/escrow
 
-Creates an escrow in Trustless Work and links it to the order.
+Creates an escrow contract on Stellar via Trustless Work and links it to the order.
+
+The Orchestrator automatically:
+1. Gets buyer and seller Stellar addresses from their invisible wallets
+2. Deploys a Soroban smart contract via Trustless Work API
+3. Signs the deploy transaction with the platform wallet
+4. Submits the signed transaction to Stellar
+5. Stores the `contractId` in the escrow record
+
+### Prerequisites
+
+- Order must be in `FUNDS_RESERVED` status
+- Both buyer and seller must have wallets with USDC trustlines
+- `PAYMENT_PROVIDER=crypto` must be set
 
 ### Request
 
 ```http
 POST /api/v1/orders/ord_abc123/escrow
-Authorization: Bearer ohk_live_xxx
-Idempotency-Key: {uuid}
-Content-Type: application/json
+x-api-key: ohk_live_xxx
 ```
 
-```json
-{
-  "terms": {
-    "milestones_required": true,
-    "allow_partial_release": true,
-    "allow_partial_refund": true
-  }
-}
-```
+No request body required.
 
 ### Response
 
 ```json
 {
-  "order_id": "ord_...",
-  "status": "ESCROW_CREATING",
-  "escrow_id": "esc_..."
+    "data": {
+        "success": true,
+        "data": {
+            "id": "ord_abc123",
+            "status": "ESCROW_FUNDING",
+            "escrow": {
+                "id": "esc_xxx",
+                "trustlessContractId": "CCBSP...",
+                "status": "CREATED",
+                "amount": "100.00"
+            }
+        }
+    }
 }
 ```
 
 ### Emitted Events
 
-- `escrow.created` (when available)
+- `order.escrow_creating`
 
 ---
 
 ## POST /orders/{order_id}/escrow/fund
 
-Funds the escrow using reserved buyer balance.
+Funds the escrow using the buyer's reserved balance. The reserved balance is deducted and USDC is sent to the on-chain smart contract.
+
+The Orchestrator automatically:
+1. Deducts from buyer's reserved balance
+2. Calls TW fund-escrow endpoint with USDC amount
+3. Signs the funding transaction with the buyer's invisible wallet
+4. Submits to Stellar
+5. Transitions escrow to `FUNDED` and order to `IN_PROGRESS`
 
 ### Request
 
 ```http
 POST /api/v1/orders/ord_abc123/escrow/fund
-Authorization: Bearer ohk_live_xxx
-Idempotency-Key: {uuid}
-Content-Type: application/json
+x-api-key: ohk_live_xxx
 ```
 
-```json
-{ "source": "AIRTM_BALANCE", "amount": "120.00" }
-```
+No request body required. Amount is taken from the order.
 
 ### Response
 
 ```json
 {
-  "order_id": "ord_...",
-  "status": "ESCROW_FUNDED",
-  "escrow": { "trustless_contract_id": "C...", "status": "FUNDED" }
+    "data": {
+        "success": true,
+        "data": {
+            "id": "ord_abc123",
+            "status": "IN_PROGRESS",
+            "escrow": {
+                "id": "esc_xxx",
+                "trustlessContractId": "CCBSP...",
+                "status": "FUNDED",
+                "amount": "100.00",
+                "fundedAt": "2026-02-17T16:35:20.405Z"
+            }
+        }
+    }
 }
 ```
 
 ### Emitted Events
 
-- `escrow.funding_started`
-- `escrow.funded`
-- `order.state_changed`
+- `balance.released` (reserved balance deducted)
+- `order.escrow_funded`
 
 ---
 
-## GET /orders/{order_id}/escrow
+## GET /orders/{order_id}
 
-Gets the escrow technical state.
+Returns the order with escrow details (use the standard GET order endpoint).
 
 ### Request
 
 ```http
-GET /api/v1/orders/ord_abc123/escrow
-Authorization: Bearer ohk_live_xxx
+GET /api/v1/orders/ord_abc123
+x-api-key: ohk_live_xxx
 ```
 
 ### Response
 
 ```json
 {
-  "escrow_id": "esc_...",
-  "trustless_contract_id": "C...",
-  "status": "FUNDED",
-  "milestones": [
-    { "milestone_ref": "m1", "amount": "60.00", "status": "OPEN" }
-  ]
+    "data": {
+        "success": true,
+        "data": {
+            "id": "ord_abc123",
+            "status": "IN_PROGRESS",
+            "escrow": {
+                "id": "esc_xxx",
+                "trustlessContractId": "CCBSP...",
+                "status": "FUNDED",
+                "amount": "100.00",
+                "fundedAt": "2026-02-17T16:35:20.405Z",
+                "releasedAt": null,
+                "refundedAt": null
+            },
+            "milestones": []
+        }
+    }
 }
 ```
 
 ---
 
-## POST /orders/{order_id}/milestones/{milestone_ref}/complete
+## Important Notes
 
-Marks a milestone as completed (optional flow).
+### Amount Format
 
-### Request
+The Orchestrator stores amounts as strings with 2 decimal places (e.g., `"100.00"`). When communicating with Trustless Work API, amounts are converted to USDC numbers (e.g., `100`). **Never send stroops to TW API.**
 
-```http
-POST /api/v1/orders/ord_abc123/milestones/m1/complete
-Authorization: Bearer ohk_live_xxx
-Idempotency-Key: {uuid}
-Content-Type: application/json
+### Escrow States
+
+```
+CREATING -> CREATED -> FUNDED -> RELEASED / REFUNDED
 ```
 
-```json
-{ "completed_by": "buyer", "note": "Looks good" }
-```
+### On-Chain Contract
 
-### Response
+The `trustlessContractId` (e.g., `CCBSP...`) is a Soroban smart contract address on Stellar. You can verify it on:
+- Testnet: https://stellar.expert/explorer/testnet/contract/{contractId}
+- Mainnet: https://stellar.expert/explorer/public/contract/{contractId}
 
-```json
-{ "order_id": "ord_...", "milestone_ref": "m1", "status": "COMPLETED" }
-```
+### Error Scenarios
+
+| Scenario | Error Code | Resolution |
+|----------|------------|------------|
+| Order not in FUNDS_RESERVED | `INVALID_STATE` | Reserve funds first |
+| Escrow already exists | `ESCROW_ALREADY_EXISTS` | Cannot create duplicate |
+| TW API unavailable | `PROVIDER_UNAVAILABLE` | Retry later |
+| Insufficient USDC balance | `ESCROW_INSUFFICIENT_FUNDS` | Top up buyer wallet |

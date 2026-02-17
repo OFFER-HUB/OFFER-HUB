@@ -4,6 +4,7 @@ import { ResolutionController } from './resolution.controller';
 import { DatabaseModule } from '../database/database.module';
 import { BalanceModule } from '../balance/balance.module';
 import { TrustlessWorkModule } from '../../providers/trustless-work/trustless-work.module';
+import { PaymentProviderModule } from '../../providers/payment/payment-provider.module';
 import { OrdersModule } from '../orders/orders.module';
 import { WebhookService } from '../../providers/trustless-work/services/webhook.service';
 import { EventsModule } from '../events/events.module';
@@ -20,6 +21,7 @@ import { EventsModule } from '../events/events.module';
         DatabaseModule,
         BalanceModule,
         TrustlessWorkModule,
+        PaymentProviderModule,
         OrdersModule,
         EventsModule,
     ],

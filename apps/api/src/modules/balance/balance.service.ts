@@ -665,10 +665,9 @@ export class BalanceService {
                         resourceType: 'balance',
                         resourceId: balance.id,
                         payloadBefore: previousBalance,
-                        payloadAfter: newBalance,
+                        payloadAfter: { ...newBalance, ...metadata },
                         actorType: 'system',
                         result: 'SUCCESS',
-                        ...metadata,
                     },
                 });
 

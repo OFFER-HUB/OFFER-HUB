@@ -8,6 +8,7 @@ import {
     UseGuards,
     HttpCode,
     HttpStatus,
+    Inject,
 } from '@nestjs/common';
 import {
     WithdrawalsService,
@@ -33,7 +34,7 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 @Controller('withdrawals')
 @UseGuards(ApiKeyGuard, ScopeGuard)
 export class WithdrawalsController {
-    constructor(private readonly withdrawalsService: WithdrawalsService) {}
+    constructor(@Inject(WithdrawalsService) private readonly withdrawalsService: WithdrawalsService) {}
 
     /**
      * Creates a new withdrawal for the authenticated user.

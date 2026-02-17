@@ -16,6 +16,7 @@ import { Prisma, MilestoneStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { BalanceService } from '../balance/balance.service';
 import { EscrowClient } from '../../providers/trustless-work/clients/escrow.client';
+import { PAYMENT_PROVIDER, PaymentProvider } from '../../providers/payment/payment-provider.interface';
 import { OrdersService, OrderWithRelations } from '../orders/orders.service';
 import {
     generateAuditLogId,
@@ -29,8 +30,6 @@ import {
     DisputeStatus,
     ResolutionDecision,
 } from '@offerhub/shared';
-import { ReleaseMode } from '../../providers/trustless-work/dto/release.dto';
-import { RefundMode } from '../../providers/trustless-work/dto/refund.dto';
 import type { OpenDisputeDto, AssignDisputeDto, ResolveDisputeDto } from './dto';
 import {
     DisputeNotFoundException,
@@ -95,6 +94,7 @@ export class ResolutionService {
         @Inject(PrismaService) private readonly prisma: PrismaService,
         @Inject(BalanceService) private readonly balanceService: BalanceService,
         @Inject(EscrowClient) private readonly escrowClient: EscrowClient,
+        @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
         @Inject(OrdersService) private readonly ordersService: OrdersService,
         @Inject(EventBusService) private readonly eventBus: EventBusService,
     ) { }
@@ -201,22 +201,63 @@ export class ResolutionService {
         const escrowType =
             order.milestones && order.milestones.length > 1 ? 'multi-release' : 'single-release';
 
-        // 9. Call escrowClient.releaseEscrow
+        // 9. Mark milestone as completed in TW (required before release)
+        const buyerDeposit = await this.paymentProvider.getDepositInfo(order.buyerId);
+        const buyerAddress = buyerDeposit.address!;
+        const sellerDeposit = await this.paymentProvider.getDepositInfo(order.sellerId);
+        const sellerAddress = sellerDeposit.address!;
+
         try {
-            await this.escrowClient.releaseEscrow(
+            const milestoneResult = await this.escrowClient.changeMilestoneStatus(
                 order.escrow.trustlessContractId!,
-                {
-                    mode: ReleaseMode.FULL,
-                    reason: reason || 'Order completed successfully',
-                },
+                '0', // Single-release escrows have 1 milestone at index 0
+                'completed',
+                sellerAddress,
                 escrowType,
             );
 
-            // 10. Update escrow → RELEASING
-            await this.prisma.escrow.updateMany({
-                where: { orderId },
-                data: { status: EscrowStatus.RELEASING },
-            });
+            if (milestoneResult.unsignedTransaction) {
+                const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                    order.sellerId, // Seller signs milestone completion (serviceProvider role)
+                    milestoneResult.unsignedTransaction,
+                );
+                await this.escrowClient.sendTransaction(signedXdr);
+                this.logger.log(`Milestone completed for order ${orderId}`);
+            }
+
+            // 10. Approve milestone (buyer confirms work is done)
+            const approveResult = await this.escrowClient.approveMilestone(
+                order.escrow.trustlessContractId!,
+                '0',
+                buyerAddress,
+                escrowType,
+            );
+
+            if (approveResult.unsignedTransaction) {
+                const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                    order.buyerId, // Buyer signs milestone approval (approver role)
+                    approveResult.unsignedTransaction,
+                );
+                await this.escrowClient.sendTransaction(signedXdr);
+                this.logger.log(`Milestone approved for order ${orderId}`);
+            }
+
+            // 11. Call escrowClient.releaseEscrow + sign+send
+            const releaseResult = await this.escrowClient.releaseEscrow(
+                order.escrow.trustlessContractId!,
+                buyerAddress,
+                escrowType,
+            );
+
+            // Sign and submit release transaction if unsigned XDR returned
+            if (releaseResult.unsignedTransaction) {
+                const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                    order.buyerId,
+                    releaseResult.unsignedTransaction,
+                );
+                await this.escrowClient.sendTransaction(signedXdr);
+                this.logger.log(`Release transaction signed and submitted for order ${orderId}`);
+            }
         } catch (error: any) {
             this.logger.error(`Failed to release escrow for order ${orderId}:`, error);
             // Rollback order status
@@ -227,22 +268,25 @@ export class ResolutionService {
             throw error;
         }
 
-        // 11. Emit event
+        // 10. Emit release requested event
         this.eventBus.emit<OrderReleaseRequestedPayload>({
             eventType: EVENT_CATALOG.ORDER_RELEASE_REQUESTED,
             aggregateId: orderId,
             aggregateType: 'Order',
             payload: {
                 orderId,
-                requestedBy: order.buyerId, // Usually buyer requests release
+                requestedBy: order.buyerId,
                 requestedAt: new Date().toISOString(),
             },
             metadata: EventBusService.createMetadata({ userId: order.buyerId }),
         });
 
-        this.logger.log(`Release requested for order ${orderId}`);
+        // 11. Complete release immediately (TW has no webhooks)
+        const finalOrder = await this.confirmRelease(orderId);
 
-        return updated as OrderWithRelations;
+        this.logger.log(`Release completed for order ${orderId}`);
+
+        return finalOrder;
     }
 
     /**
@@ -457,18 +501,25 @@ export class ResolutionService {
             },
         );
 
-        // 7. Call escrowClient.refundEscrow
-        try {
-            await this.escrowClient.refundEscrow(order.escrow.trustlessContractId!, {
-                mode: RefundMode.FULL,
-                reason,
-            });
+        // 7. Call escrowClient.refundEscrow + sign+send
+        const escrowType =
+            order.milestones && order.milestones.length > 1 ? 'multi-release' : 'single-release';
 
-            // 8. Update escrow → REFUNDING
-            await this.prisma.escrow.updateMany({
-                where: { orderId },
-                data: { status: EscrowStatus.REFUNDING },
-            });
+        try {
+            const refundResult = await this.escrowClient.refundEscrow(
+                order.escrow.trustlessContractId!,
+                escrowType,
+            );
+
+            // Sign and submit refund transaction if unsigned XDR returned
+            if (refundResult.unsignedTransaction) {
+                const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                    order.buyerId,
+                    refundResult.unsignedTransaction,
+                );
+                await this.escrowClient.sendTransaction(signedXdr);
+                this.logger.log(`Refund transaction signed and submitted for order ${orderId}`);
+            }
         } catch (error: any) {
             this.logger.error(`Failed to refund escrow for order ${orderId}:`, error);
             // Rollback order status
@@ -479,7 +530,7 @@ export class ResolutionService {
             throw error;
         }
 
-        // 9. Emit event
+        // 8. Emit refund requested event
         this.eventBus.emit<OrderRefundRequestedPayload>({
             eventType: EVENT_CATALOG.ORDER_REFUND_REQUESTED,
             aggregateId: orderId,
@@ -492,9 +543,12 @@ export class ResolutionService {
             metadata: EventBusService.createMetadata({ userId: order.buyerId }),
         });
 
-        this.logger.log(`Refund requested for order ${orderId}`);
+        // 9. Complete refund immediately (TW has no webhooks)
+        const finalOrder = await this.confirmRefund(orderId);
 
-        return updated as OrderWithRelations;
+        this.logger.log(`Refund completed for order ${orderId}`);
+
+        return finalOrder;
     }
 
     /**
@@ -1002,33 +1056,71 @@ export class ResolutionService {
     ): Promise<void> {
         this.logger.debug(`Executing full release for dispute ${dispute.id}`);
 
-        // Calls escrowClient.releaseEscrow() with mode: FULL
+        // Calls escrowClient.releaseEscrow() + sign+send
         const escrowType =
             order.milestones && order.milestones.length > 1 ? 'multi-release' : 'single-release';
 
-        await this.escrowClient.releaseEscrow(
+        const buyerDeposit = await this.paymentProvider.getDepositInfo(order.buyerId);
+        const buyerAddress = buyerDeposit.address!;
+        const sellerDeposit = await this.paymentProvider.getDepositInfo(order.sellerId);
+        const sellerAddress = sellerDeposit.address!;
+
+        // Mark milestone as completed in TW (required before release)
+        const milestoneResult = await this.escrowClient.changeMilestoneStatus(
             order.escrow!.trustlessContractId!,
-            {
-                mode: ReleaseMode.FULL,
-                reason: note || `Dispute resolved: Full release to seller`,
-            },
+            '0',
+            'completed',
+            sellerAddress,
             escrowType,
         );
 
-        // Update order → RELEASE_REQUESTED
+        if (milestoneResult.unsignedTransaction) {
+            const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                order.sellerId, // Seller signs milestone completion (serviceProvider role)
+                milestoneResult.unsignedTransaction,
+            );
+            await this.escrowClient.sendTransaction(signedXdr);
+        }
+
+        // Approve milestone (buyer confirms work is done)
+        const approveResult = await this.escrowClient.approveMilestone(
+            order.escrow!.trustlessContractId!,
+            '0',
+            buyerAddress,
+            escrowType,
+        );
+
+        if (approveResult.unsignedTransaction) {
+            const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                order.buyerId, // Buyer signs milestone approval (approver role)
+                approveResult.unsignedTransaction,
+            );
+            await this.escrowClient.sendTransaction(signedXdr);
+        }
+
+        const releaseResult = await this.escrowClient.releaseEscrow(
+            order.escrow!.trustlessContractId!,
+            buyerAddress,
+            escrowType,
+        );
+
+        if (releaseResult.unsignedTransaction) {
+            const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                order.buyerId,
+                releaseResult.unsignedTransaction,
+            );
+            await this.escrowClient.sendTransaction(signedXdr);
+        }
+
+        // Set order to RELEASE_REQUESTED then complete immediately (TW has no webhooks)
         await this.prisma.order.update({
             where: { id: order.id },
             data: { status: OrderStatus.RELEASE_REQUESTED },
         });
 
-        // Update escrow → RELEASING
-        await this.prisma.escrow.updateMany({
-            where: { orderId: order.id },
-            data: { status: EscrowStatus.RELEASING },
-        });
+        await this.confirmRelease(order.id);
 
-        this.logger.log(`Full release initiated for dispute ${dispute.id}`);
-        // confirmRelease() will be called via webhook
+        this.logger.log(`Full release completed for dispute ${dispute.id}`);
     }
 
     /**
@@ -1042,26 +1134,32 @@ export class ResolutionService {
     ): Promise<void> {
         this.logger.debug(`Executing full refund for dispute ${dispute.id}`);
 
-        // Calls escrowClient.refundEscrow() with mode: FULL
-        await this.escrowClient.refundEscrow(order.escrow!.trustlessContractId!, {
-            mode: RefundMode.FULL,
-            reason: note || `Dispute resolved: Full refund to buyer`,
-        });
+        // Calls escrowClient.refundEscrow() + sign+send
+        const escrowType =
+            order.milestones && order.milestones.length > 1 ? 'multi-release' : 'single-release';
 
-        // Update order → REFUND_REQUESTED
+        const refundResult = await this.escrowClient.refundEscrow(
+            order.escrow!.trustlessContractId!,
+            escrowType,
+        );
+
+        if (refundResult.unsignedTransaction) {
+            const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                order.buyerId,
+                refundResult.unsignedTransaction,
+            );
+            await this.escrowClient.sendTransaction(signedXdr);
+        }
+
+        // Set order to REFUND_REQUESTED then complete immediately (TW has no webhooks)
         await this.prisma.order.update({
             where: { id: order.id },
             data: { status: OrderStatus.REFUND_REQUESTED },
         });
 
-        // Update escrow → REFUNDING
-        await this.prisma.escrow.updateMany({
-            where: { orderId: order.id },
-            data: { status: EscrowStatus.REFUNDING },
-        });
+        await this.confirmRefund(order.id);
 
-        this.logger.log(`Full refund initiated for dispute ${dispute.id}`);
-        // confirmRefund() will be called via webhook
+        this.logger.log(`Full refund completed for dispute ${dispute.id}`);
     }
 
     /**
@@ -1079,11 +1177,11 @@ export class ResolutionService {
             `Executing split resolution for dispute ${dispute.id}: release=${releaseAmount}, refund=${refundAmount}`,
         );
 
-        // Calls escrowClient.resolveDispute() with split amounts
+        // Calls escrowClient.resolveDispute() with split amounts + sign+send
         const escrowType =
             order.milestones && order.milestones.length > 1 ? 'multi-release' : 'single-release';
 
-        await this.escrowClient.resolveDispute(
+        const disputeResult = await this.escrowClient.resolveDispute(
             order.escrow!.trustlessContractId!,
             {
                 release_amount: releaseAmount,
@@ -1091,6 +1189,14 @@ export class ResolutionService {
             },
             escrowType,
         );
+
+        if (disputeResult.unsignedTransaction) {
+            const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                order.buyerId,
+                disputeResult.unsignedTransaction,
+            );
+            await this.escrowClient.sendTransaction(signedXdr);
+        }
 
         // Credit seller via creditAvailable
         await this.balanceService.creditAvailable(order.sellerId, {
