@@ -30,6 +30,11 @@ export class BlockchainMonitorService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    if (process.env.DISABLE_BLOCKCHAIN_MONITOR === 'true') {
+      this.logger.log('[BlockchainMonitor] Monitoring DISABLED via env var');
+      return;
+    }
+
     await this.startMonitoringAllWallets();
   }
 
@@ -114,12 +119,11 @@ export class BlockchainMonitorService implements OnModuleInit, OnModuleDestroy {
 
     const txHash = payment.transaction_hash;
 
-    // Deduplicate
+    // In-memory dedup (fast path — avoids DB hit for obvious duplicates within same process)
     if (this.processedTxHashes.has(txHash)) {
-      this.logger.debug(`Skipping duplicate tx: ${txHash}`);
+      this.logger.debug(`Skipping duplicate tx (in-memory): ${txHash}`);
       return;
     }
-    this.processedTxHashes.add(txHash);
 
     const amount = payment.amount;
     this.logger.log(
@@ -128,6 +132,16 @@ export class BlockchainMonitorService implements OnModuleInit, OnModuleDestroy {
 
     // Credit user's balance
     try {
+      // DB-level dedup: upsert ProcessedTransaction atomically — skip if already exists
+      const alreadyProcessed = await this.prisma.processedTransaction.findUnique({
+        where: { transactionHash: txHash },
+      });
+      if (alreadyProcessed) {
+        this.logger.debug(`Skipping duplicate tx (db): ${txHash}`);
+        this.processedTxHashes.add(txHash);
+        return;
+      }
+
       const balance = await this.prisma.balance.findFirst({
         where: { userId },
       });
@@ -137,10 +151,17 @@ export class BlockchainMonitorService implements OnModuleInit, OnModuleDestroy {
           parseFloat(balance.available.toString()) + parseFloat(amount)
         ).toFixed(2);
 
-        await this.prisma.balance.update({
-          where: { id: balance.id },
-          data: { available: newAvailable },
-        });
+        await this.prisma.$transaction([
+          this.prisma.balance.update({
+            where: { id: balance.id },
+            data: { available: newAvailable },
+          }),
+          this.prisma.processedTransaction.create({
+            data: { transactionHash: txHash, userId, amount, source: 'stellar_deposit' },
+          }),
+        ]);
+
+        this.processedTxHashes.add(txHash);
 
         // Emit domain event
         this.eventBus.emit({

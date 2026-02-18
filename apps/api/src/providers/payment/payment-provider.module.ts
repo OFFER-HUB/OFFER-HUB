@@ -15,8 +15,10 @@ const logger = new Logger('PaymentProviderModule');
         const providerType = process.env.PAYMENT_PROVIDER || 'crypto';
 
         if (providerType === 'airtm') {
-          logger.warn(
-            'AirTM payment provider selected but not yet implemented. Falling back to crypto.',
+          throw new Error(
+            'AirTM PaymentProvider is not yet available in this version. ' +
+            'Set PAYMENT_PROVIDER=crypto to use Stellar USDC wallets. ' +
+            'AirTM support is planned for a future release.',
           );
         }
 

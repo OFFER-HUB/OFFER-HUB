@@ -39,11 +39,30 @@ The Orchestrator is designed for horizontal scaling. You can run multiple API in
 
 ### Keeping BlockchainMonitorService as a Singleton
 
-When running multiple API instances, only one should run `BlockchainMonitorService` to avoid duplicate payments being processed. Add this env var to all instances except one:
+When running multiple API instances, only one should run `BlockchainMonitorService` to avoid duplicate payments being processed.
+
+#### Why Only One Monitor Instance?
+
+`BlockchainMonitorService` opens a persistent Horizon SSE stream per wallet. If two instances both monitor the same wallet:
+
+- Each instance emits its own `balance.credited` event for the same deposit.
+- Even with in-memory deduplication (`processedTxHashes`), the set is per-process — a tx hash seen by instance A is not known to instance B.
+- This causes double-crediting user balances.
+
+The `ProcessedTransaction` table provides persistent DB-level deduplication as a safety net, but the recommended practice is still to run the monitor on exactly one instance.
+
+#### Setup
+
+Add this env var to all instances except one:
 
 ```env
 DISABLE_BLOCKCHAIN_MONITOR=true
 ```
+
+| Instance Role | `DISABLE_BLOCKCHAIN_MONITOR` | Description |
+|---|---|---|
+| **Monitor instance** (1 only) | not set / `false` | Runs the Horizon SSE streams |
+| **API instances** (N) | `true` | Handle HTTP requests only |
 
 Then guard it in [blockchain-monitor.service.ts](../../apps/api/src/modules/wallet/blockchain-monitor.service.ts):
 
@@ -52,6 +71,57 @@ async onModuleInit() {
   if (process.env.DISABLE_BLOCKCHAIN_MONITOR === 'true') return;
   await this.startMonitoringAllWallets();
 }
+```
+
+When the monitor is disabled, startup logs will show:
+
+```
+[BlockchainMonitor] Monitoring DISABLED via env var
+```
+
+### Graceful Shutdown
+
+The Orchestrator registers `SIGTERM` and `SIGINT` handlers on startup. When the process receives a signal (e.g., from Kubernetes during a rolling deploy or Railway restart):
+
+1. **HTTP server stops** accepting new requests.
+2. **In-flight requests** are given time to complete (NestJS `app.close()`).
+3. **BullMQ workers** finish their current job before stopping.
+4. **Horizon SSE streams** are closed via `BlockchainMonitorService.onModuleDestroy()`.
+5. Process exits cleanly with code `0`.
+
+If shutdown takes longer than **30 seconds**, the process force-exits with code `1` to prevent indefinite hangs.
+
+Startup confirms registration with:
+
+```
+[Shutdown] Graceful shutdown handler registered
+```
+
+#### Kubernetes Example
+
+```yaml
+spec:
+  terminationGracePeriodSeconds: 35  # > 30s app timeout
+  containers:
+    - name: orchestrator-api
+      lifecycle:
+        preStop:
+          exec:
+            command: ["/bin/sh", "-c", "sleep 2"]  # Allow LB to drain
+```
+
+### Redis / BullMQ
+
+All instances share the same Redis instance. BullMQ workers process jobs from shared queues — this is safe for horizontal scaling because BullMQ uses atomic job locking. No additional configuration is needed.
+
+### Database Connections
+
+Use **PgBouncer** (pooler URL port 6543) for HTTP instances to avoid exhausting Postgres connection limits. The monitor instance can also use the pooler — it only makes periodic `findMany` calls on startup.
+
+For Prisma migrations, always use the direct URL (port 5432):
+
+```bash
+DIRECT_URL=postgres://USER:PASSWORD@HOST:5432/postgres
 ```
 
 ---
@@ -171,77 +241,9 @@ await this.balanceService.release(userId, amount);
 
 ---
 
-## Deployment Guide (Self-Hosted)
-
-### Step-by-step
-
-1. **Provision infrastructure** — PostgreSQL (Supabase), Redis (Upstash), and a Node.js host (Railway, Render, Fly.io, VPS)
-
-2. **Clone and build**
-   ```bash
-   git clone https://github.com/OFFER-HUB/OFFER-HUB.git
-   cd OFFER-HUB
-   npm install
-   npm run build
-   ```
-
-3. **Set environment variables** — Copy from `.env.example`, fill all required values. See [env-variables.md](../deployment/env-variables.md).
-
-4. **Run migrations**
-   ```bash
-   # Must use DIRECT_URL (port 5432), not pooler
-   npm run prisma:migrate
-   ```
-
-5. **Start**
-   ```bash
-   node apps/api/dist/main.js
-   # or with pm2: pm2 start apps/api/dist/main.js --name offerhub-api
-   ```
-
-6. **Create master API key**
-   ```bash
-   curl -X POST http://your-domain/api/v1/auth/api-keys \
-     -H "Authorization: Bearer $OFFERHUB_MASTER_KEY" \
-     -H "Content-Type: application/json" \
-     -d '{"name": "Production", "scopes": ["read", "write"]}'
-   ```
-
-### Security Checklist
-
-- [ ] `OFFERHUB_MASTER_KEY` is a long random secret (not a password)
-- [ ] `WALLET_ENCRYPTION_KEY` is a 32-byte hex — back it up securely
-- [ ] API is behind HTTPS (TLS termination at load balancer)
-- [ ] `DATABASE_URL` uses SSL (`?sslmode=require`)
-- [ ] Redis has a password (`requirepass` in redis.conf)
-- [ ] API key is rotated after any team member leaves
-- [ ] `NODE_ENV=production` is set (enables stricter validation)
-- [ ] Rate limiting is configured (built-in via NestJS throttler)
-- [ ] `.env` file is never committed to git
-
-### Running Migrations (Prisma + Supabase)
-
-```bash
-# Always use DIRECT_URL (port 5432), never the pooler (port 6543)
-DATABASE_URL="postgresql://postgres:pass@db.xxx.supabase.co:5432/postgres" \
-DIRECT_URL="postgresql://postgres:pass@db.xxx.supabase.co:5432/postgres" \
-npm run prisma:migrate
-```
-
-### Production vs Development Variables
-
-| Variable | Development | Production |
-|----------|-------------|------------|
-| `NODE_ENV` | `development` | `production` |
-| `STELLAR_NETWORK` | `testnet` | `mainnet` |
-| `DATABASE_URL` | Supabase free tier | Supabase Pro or dedicated |
-| `LOG_LEVEL` | `debug` | `warn` or `error` |
-| `PORT` | `4000` | As required by host |
-
----
-
 ## Related Docs
 
+- [Deployment Guide](./deployment.md)
 - [Environment Variables](../deployment/env-variables.md)
 - [Crypto-Native Setup](../deployment/crypto-native-setup.md)
 - [Security Hardening](../deployment/security-hardening.md)

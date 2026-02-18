@@ -1,4 +1,57 @@
-# Top-ups Endpoints
+# Top-ups / Deposit Endpoints
+
+> **Provider-dependent behavior:** How a buyer adds funds depends on `PAYMENT_PROVIDER`:
+>
+> | `PAYMENT_PROVIDER` | Deposit method | Endpoints used |
+> |---------------------|----------------|----------------|
+> | `crypto` | Send USDC to user's Stellar address | `GET /users/:userId/wallet/deposit` → send on-chain |
+> | `airtm` | AirTM payin flow | `POST /topups` → redirect user → webhook confirms |
+>
+> See also: [Wallet Endpoints](./wallet.md) for the crypto deposit flow.
+
+---
+
+## Crypto-Native Deposit Flow (`PAYMENT_PROVIDER=crypto`)
+
+When using the crypto provider, there is **no `/topups` call**. The buyer sends USDC directly to their invisible Stellar wallet address:
+
+### Step 1 — Get the deposit address
+
+```http
+GET /api/v1/users/{userId}/wallet/deposit
+Authorization: Bearer ohk_live_xxx
+```
+
+Response:
+```json
+{
+  "data": {
+    "provider": "crypto",
+    "method": "stellar_address",
+    "address": "GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27",
+    "asset": {
+      "code": "USDC",
+      "issuer": "GBBD47IF6LWK7P7MDEVSCWR7DPUWV3NY3DTQEVFL4NAT4AQH3ZLLFLA5"
+    },
+    "network": "testnet",
+    "instructions": "Send USDC to this Stellar address. Deposits are detected automatically within seconds."
+  }
+}
+```
+
+### Step 2 — User sends USDC on Stellar
+
+The marketplace displays the address (or QR code) to the buyer. The buyer sends USDC from any Stellar wallet.
+
+### Step 3 — Automatic credit (no action needed)
+
+`BlockchainMonitorService` polls Stellar Horizon every few seconds for each monitored wallet. When a USDC payment is detected, the user's `available` balance is credited automatically and a `balance.credited` event is emitted.
+
+**No webhook, no polling, no additional API calls required from the marketplace.**
+
+---
+
+## AirTM Top-up Flow (`PAYMENT_PROVIDER=airtm`)
 
 ## POST /topups
 

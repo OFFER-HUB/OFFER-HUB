@@ -16,6 +16,7 @@ export interface ScheduleConfig {
         batchSize?: number;
         rateLimitDelay?: number;
         staleThreshold?: number;
+        lookbackHours?: number;
     };
 }
 
@@ -34,6 +35,10 @@ const DEFAULT_SCHEDULES: Record<string, ScheduleConfig> = {
     [JOB_TYPES.SYNC_ESCROWS]: {
         every: 10 * 60 * 1000, // Every 10 minutes
         config: { batchSize: 30, staleThreshold: 10 * 60 * 1000 },
+    },
+    [JOB_TYPES.CHECK_MISSED_DEPOSITS]: {
+        every: 5 * 60 * 1000, // Every 5 minutes
+        config: { lookbackHours: 24, batchSize: 100 },
     },
 };
 

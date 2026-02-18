@@ -120,6 +120,19 @@ cp .env.example .env
 
 Edit `.env` with your values (see [Environment Variables](#environment-variables) below).
 
+Quick reference for `PAYMENT_PROVIDER=crypto` (default):
+
+| Variable | Description |
+|---|---|
+| `DATABASE_URL` | Postgres pooler URL (port 6543 for Supabase) |
+| `DIRECT_URL` | Postgres direct URL (port 5432 — for migrations) |
+| `REDIS_URL` | Redis connection URL |
+| `WALLET_ENCRYPTION_KEY` | 32-byte hex key for AES-256-GCM |
+| `OFFERHUB_MASTER_KEY` | Master API key for bootstrapping marketplace keys |
+| `TRUSTLESS_API_KEY` | Trustless Work API key |
+| `TRUSTLESS_WEBHOOK_SECRET` | Webhook secret from Trustless Work dashboard |
+| `PUBLIC_BASE_URL` | Public HTTPS URL of this instance |
+
 ### 4. Run database migrations
 
 ```bash
@@ -130,13 +143,37 @@ npm run prisma:migrate
 
 ### 5. Bootstrap the platform user
 
+The Orchestrator requires a dedicated platform user whose Stellar wallet serves as `disputeResolver` and `platformAddress` in all escrow contracts.
+
 Run once after migrations (idempotent — safe to run again):
 
 ```bash
 npm run bootstrap
 ```
 
-Copy the output `PLATFORM_USER_ID=usr_xxx` into your `.env` file. This creates the Stellar wallet used as `disputeResolver` and `platformAddress` in all escrow contracts.
+Expected output:
+
+```
+🚀 OFFER-HUB Orchestrator Bootstrap
+
+Creating platform user...
+  ✓ Platform user created: usr_xxxxxxxxxxxx
+Generating Stellar wallet...
+  ✓ Wallet created: GXXXXXXXXXXXXXXXX
+Setting up testnet funding + USDC trustline...
+  ✓ Testnet account funded
+  ✓ USDC trustline established
+
+✅ Bootstrap complete!
+
+─────────────────────────────────────────────
+PLATFORM_USER_ID=usr_xxxxxxxxxxxx
+─────────────────────────────────────────────
+```
+
+Copy the `PLATFORM_USER_ID=...` line into your `.env` file.
+
+> **Idempotent**: Running `npm run bootstrap` again will detect the existing platform user and print its ID without creating a duplicate.
 
 ### 6. Build
 
@@ -155,6 +192,15 @@ pm2 start apps/api/dist/main.js --name offerhub-api
 
 # Development (hot-reload)
 npm run dev
+```
+
+Startup logs confirm readiness:
+
+```
+[Bootstrap] Platform user validated: usr_xxx (wallet: GXXX...)
+[BlockchainMonitor] Starting monitor for N wallets
+[Shutdown] Graceful shutdown handler registered
+API listening on port 4000
 ```
 
 ### 8. Create the first API key
@@ -312,6 +358,7 @@ Use this endpoint for load balancer health checks and uptime monitoring.
 - [ ] `DATABASE_URL` uses `?sslmode=require`
 - [ ] Redis uses TLS (`rediss://` protocol)
 - [ ] Firewall only exposes port 4000 (or load balancer port) publicly
+- [ ] `PUBLIC_BASE_URL` is HTTPS only
 
 ### Operations
 
@@ -321,6 +368,14 @@ Use this endpoint for load balancer health checks and uptime monitoring.
 - [ ] Rate limiting is configured (built-in NestJS Throttler)
 - [ ] API key is rotated if any team member leaves
 - [ ] `BlockchainMonitorService` singleton guard is in place for multi-instance
+
+### Mainnet
+
+- [ ] `STELLAR_NETWORK=mainnet`
+- [ ] `STELLAR_HORIZON_URL=https://horizon.stellar.org`
+- [ ] `STELLAR_USDC_ISSUER` set to Circle mainnet issuer
+- [ ] `TRUSTLESS_API_URL=https://api.trustlesswork.com`
+- [ ] Platform wallet manually funded with XLM + USDC trustline
 
 ### Backup
 

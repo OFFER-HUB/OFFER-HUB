@@ -1351,6 +1351,67 @@ export class ResolutionService {
     }
 
     /**
+     * Get a dispute by ID.
+     *
+     * @param disputeId Dispute ID
+     * @returns Dispute with order relations
+     */
+    async getDispute(disputeId: string): Promise<DisputeWithRelations> {
+        const dispute = await this.prisma.dispute.findUnique({
+            where: { id: disputeId },
+            include: {
+                order: {
+                    include: {
+                        escrow: true,
+                        dispute: true,
+                        milestones: true,
+                    },
+                },
+            },
+        });
+
+        if (!dispute) {
+            throw new DisputeNotFoundException(disputeId);
+        }
+
+        return dispute as DisputeWithRelations;
+    }
+
+    /**
+     * List disputes with optional filters.
+     *
+     * @param filters Optional filters: orderId, status, openedBy
+     * @returns Array of disputes with order relations
+     */
+    async listDisputes(filters: {
+        orderId?: string;
+        status?: string;
+        openedBy?: string;
+    } = {}): Promise<DisputeWithRelations[]> {
+        const where: Record<string, unknown> = {};
+
+        if (filters.orderId) where.orderId = filters.orderId;
+        if (filters.status) where.status = filters.status;
+        if (filters.openedBy) where.openedBy = filters.openedBy;
+
+        const disputes = await this.prisma.dispute.findMany({
+            where,
+            include: {
+                order: {
+                    include: {
+                        escrow: true,
+                        dispute: true,
+                        milestones: true,
+                    },
+                },
+            },
+            orderBy: { createdAt: 'desc' },
+        });
+
+        return disputes as DisputeWithRelations[];
+    }
+
+    /**
      * Validate no active dispute exists.
      * @private
      */

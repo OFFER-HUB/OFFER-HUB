@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Param, Body, Inject, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Inject, HttpCode, HttpStatus, Query } from '@nestjs/common';
 import { ResolutionService, DisputeWithRelations } from '../resolution/resolution.service';
 import { AssignDisputeDto, ResolveDisputeDto } from '../resolution/dto';
 
@@ -21,31 +21,27 @@ export class DisputesController {
     ) {}
 
     /**
+     * List disputes with optional filters.
+     * GET /disputes?orderId=ord_...&status=OPEN&openedBy=BUYER
+     */
+    @Get()
+    async listDisputes(
+        @Query('orderId') orderId?: string,
+        @Query('status') status?: string,
+        @Query('openedBy') openedBy?: string,
+    ): Promise<ApiResponse<DisputeWithRelations[]>> {
+        const disputes = await this.resolutionService.listDisputes({ orderId, status, openedBy });
+        return { success: true, data: disputes };
+    }
+
+    /**
      * Get dispute by ID.
      * GET /disputes/:id
      */
     @Get(':id')
     async getDispute(@Param('id') id: string): Promise<ApiResponse<DisputeWithRelations>> {
-        // For now, we'll use a simple Prisma query
-        // In production, you might want to add this method to ResolutionService
-        const dispute = await this.resolutionService['prisma'].dispute.findUnique({
-            where: { id },
-            include: {
-                order: {
-                    include: {
-                        escrow: true,
-                        dispute: true,
-                        milestones: true,
-                    },
-                },
-            },
-        });
-
-        if (!dispute) {
-            throw new Error(`Dispute ${id} not found`);
-        }
-
-        return { success: true, data: dispute as DisputeWithRelations };
+        const dispute = await this.resolutionService.getDispute(id);
+        return { success: true, data: dispute };
     }
 
     /**
