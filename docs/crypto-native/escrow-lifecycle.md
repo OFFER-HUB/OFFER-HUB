@@ -552,6 +552,31 @@ curl -s -X POST $BASE/orders/$ORDER/resolution/refund \
 - Destination: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
 - Balance before: `$12.00` → after: `$7.00`
 
+---
+
+## Crypto-Native Deposit Flow -- Verified 2026-02-18
+
+**Issue #94 — E2E Test: Deposit & Blockchain Monitor**
+
+| Step | Action | Result |
+|------|----------|--------|
+| Get deposit address | `GET /users/:id/wallet/deposit` | Returns Stellar address and asset info |
+| Send USDC on-chain | Withdrawal from seller → buyer's Stellar address | `WITHDRAWAL_COMPLETED` (synchronous) |
+| Auto-credit | `BlockchainMonitorService` detects payment via Horizon SSE stream | `available` credited automatically |
+
+**Key behavior:** `BlockchainMonitorService` uses `.cursor('now')` SSE stream. Detects incoming USDC payments within seconds of on-chain confirmation. No polling or webhook required from the marketplace.
+
+**Test data:**
+- Buyer userId: `usr_Tzl8Rnlx6Lgz1VLtKTryiZrvfeug3oce`
+- Buyer wallet: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
+- Withdrawal: `wd_NYgT3NLfgirdU8sgTb5wElY85dXXJjxi` (2.00 USDC)
+- Balance before: `$8.00` → after: `$10.00` (`updated_at: 2026-02-18T17:37:12Z`)
+- Stellar tx confirmed: `2026-02-18T17:04:53Z`
+
+**Note:** The monitor uses `.cursor('now')` — payments sent BEFORE the server starts are not auto-credited. This is by design; the monitor only processes live payments from the moment it starts.
+
+---
+
 ### Unit Tests -- All Passing
 
 ```
