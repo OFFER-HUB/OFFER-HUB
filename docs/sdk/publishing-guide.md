@@ -1,353 +1,219 @@
-# SDK Publishing Guide
+# Publishing Guide
 
-This guide explains how to publish the OfferHub SDK to NPM so other developers can install it.
+How to publish new versions of the three OFFER-HUB npm packages.
 
-## 📋 Current Status
+## Current Status
 
-The SDK is currently marked as **private** in `packages/sdk/package.json`:
+All three packages are published at v1.0.0:
 
-\`\`\`json
-{
-  "name": "@offerhub/sdk",
-  "private": true,  // ← This prevents publishing to NPM
-  "version": "0.0.0"
-}
-\`\`\`
+| Package | npm | Version |
+|---|---|---|
+| `@offerhub/sdk` | [npmjs.com/package/@offerhub/sdk](https://www.npmjs.com/package/@offerhub/sdk) | 1.0.0 |
+| `@offerhub/cli` | [npmjs.com/package/@offerhub/cli](https://www.npmjs.com/package/@offerhub/cli) | 1.0.0 |
+| `create-offer-hub-orchestrator` | [npmjs.com/package/create-offer-hub-orchestrator](https://www.npmjs.com/package/create-offer-hub-orchestrator) | 1.0.0 |
 
 ---
 
-## 🚀 Publishing to NPM
-
-### Prerequisites
-
-1. **NPM Account**: Create an account at [npmjs.com](https://www.npmjs.com)
-2. **Organization** (Optional but recommended): Create an organization for `@offerhub` scope
-3. **NPM Authentication**: Login on your machine
-
-### Step 1: Prepare the Package
-
-#### Update package.json
-
-\`\`\`json
-{
-  "name": "@offerhub/sdk",
-  "version": "1.0.0",
-  "private": false,  // Remove or set to false
-  "description": "Official TypeScript SDK for the OfferHub Orchestrator API",
-  "main": "dist/index.js",
-  "types": "dist/index.d.ts",
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/OFFER-HUB/OFFER-HUB.git",
-    "directory": "packages/sdk"
-  },
-  "homepage": "https://github.com/OFFER-HUB/OFFER-HUB#readme",
-  "bugs": {
-    "url": "https://github.com/OFFER-HUB/OFFER-HUB/issues"
-  },
-  "keywords": [
-    "offerhub",
-    "sdk",
-    "escrow",
-    "payments",
-    "marketplace",
-    "typescript"
-  ],
-  "author": "OfferHub",
-  "license": "MIT",
-  "files": [
-    "dist",
-    "README.md"
-  ],
-  "scripts": {
-    "build": "tsc -p tsconfig.json",
-    "prepublishOnly": "npm run build"
-  },
-  "dependencies": {
-    "ky": "^1.14.3"
-  }
-}
-\`\`\`
-
-Key changes:
-- Set `"private": false` or remove it entirely
-- Add proper version number (start with 1.0.0)
-- Add `repository`, `homepage`, and `bugs` for better NPM page
-- Add `keywords` for discoverability
-- Add `files` array to specify what to publish (only dist folder)
-- Add `prepublishOnly` script to ensure build runs before publishing
-
-### Step 2: Login to NPM
-
-\`\`\`bash
-npm login
-\`\`\`
-
-Enter your NPM credentials when prompted.
-
-### Step 3: Build the Package
-
-\`\`\`bash
-cd packages/sdk
-npm run build
-\`\`\`
-
-Verify that the `dist` folder contains all necessary files:
-\`\`\`bash
-ls -la dist/
-\`\`\`
-
-### Step 4: Test Locally Before Publishing
-
-Test the package locally to ensure it works:
-
-\`\`\`bash
-# In packages/sdk
-npm pack
-
-# This creates a .tgz file like: offerhub-sdk-1.0.0.tgz
-# You can install it locally to test:
-# npm install ./offerhub-sdk-1.0.0.tgz
-\`\`\`
-
-### Step 5: Publish to NPM
-
-#### Dry Run First (Recommended)
-
-\`\`\`bash
-npm publish --dry-run
-\`\`\`
-
-This shows what would be published without actually publishing.
-
-#### Publish for Real
-
-\`\`\`bash
-# If using @offerhub scope for the first time, make it public
-npm publish --access public
-
-# For subsequent versions
-npm publish
-\`\`\`
-
-### Step 6: Verify Publication
-
-Check that your package is live:
-\`\`\`bash
-npm view @offerhub/sdk
-\`\`\`
-
-Visit: https://www.npmjs.com/package/@offerhub/sdk
-
----
-
-## 🔄 Publishing Updates
-
-### Semantic Versioning
+## When to publish a new version
 
 Follow [semver](https://semver.org/):
-- **MAJOR** (1.0.0 → 2.0.0): Breaking changes
-- **MINOR** (1.0.0 → 1.1.0): New features, backward compatible
-- **PATCH** (1.0.0 → 1.0.1): Bug fixes
 
-### Update Version
-
-\`\`\`bash
-# Patch release (1.0.0 → 1.0.1)
-npm version patch
-
-# Minor release (1.0.0 → 1.1.0)
-npm version minor
-
-# Major release (1.0.0 → 2.0.0)
-npm version major
-\`\`\`
-
-This automatically:
-1. Updates version in package.json
-2. Creates a git commit
-3. Creates a git tag
-
-### Publish Update
-
-\`\`\`bash
-npm publish
-git push && git push --tags
-\`\`\`
+| Change | Version bump | Example |
+|---|---|---|
+| Bug fix | `patch` | 1.0.0 → 1.0.1 |
+| New feature, backward-compatible | `minor` | 1.0.0 → 1.1.0 |
+| Breaking change | `major` | 1.0.0 → 2.0.0 |
 
 ---
 
-## 📦 Alternative: GitHub Packages
+## How to publish a new version
 
-If you don't want to use NPM, you can publish to GitHub Packages:
+### 1. Authenticate
 
-### Step 1: Update package.json
+You need a Granular Access Token from [npmjs.com/settings/tokens](https://www.npmjs.com/settings/tokens) with:
+- **Permissions:** Read and write
+- **Bypass 2FA:** enabled
+- **Packages:** All packages (or select `@offerhub`)
 
-\`\`\`json
+```bash
+echo "//registry.npmjs.org/:_authToken=YOUR_TOKEN" >> ~/.npmrc
+```
+
+### 2. Bump version
+
+Run from the package directory:
+
+```bash
+# Patch
+cd packages/sdk && npm version patch
+
+# Minor
+cd packages/sdk && npm version minor
+
+# Major
+cd packages/sdk && npm version major
+```
+
+This updates `package.json` and creates a git tag automatically.
+
+### 3. Build
+
+From the repo root:
+
+```bash
+npm run build
+```
+
+### 4. Publish
+
+```bash
+# SDK
+cd packages/sdk && npm publish --access public
+
+# CLI
+cd packages/cli && npm publish --access public
+
+# Installer
+cd packages/create-offerhub && npm publish
+```
+
+### 5. Push tags and update the GitHub Release
+
+```bash
+git push && git push --tags
+```
+
+Then update the GitHub Release — see [Updating the GitHub Release](#updating-the-github-release) below.
+
+---
+
+## Updating the GitHub Release
+
+After publishing new package versions, update the release notes:
+
+```bash
+gh release edit v1.0.0 \
+  --repo OFFER-HUB/OFFER-HUB \
+  --notes "Updated release notes here"
+```
+
+Or to create a new release for the new version:
+
+```bash
+gh release create v1.1.0 \
+  --repo OFFER-HUB/OFFER-HUB \
+  --title "v1.1.0 — <short description>" \
+  --notes "## Changes
+- feat: ...
+- fix: ..."
+```
+
+---
+
+## Publishing to GitHub Packages (optional)
+
+GitHub Packages is an alternative registry. Useful if you want packages available directly from the GitHub org without requiring an npmjs.com account.
+
+### Setup
+
+Add to each `package.json`:
+
+```json
 {
-  "name": "@offerhub/sdk",
-  "version": "1.0.0",
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"
   }
 }
-\`\`\`
+```
 
-### Step 2: Authenticate
+### Authenticate
 
-Create a GitHub Personal Access Token with `write:packages` scope.
+Create a GitHub token with `write:packages` scope:
 
-\`\`\`bash
-npm login --scope=@offerhub --registry=https://npm.pkg.github.com
-# Username: your-github-username
-# Password: your-github-token
-\`\`\`
+```bash
+echo "//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN" >> ~/.npmrc
+echo "@offerhub:registry=https://npm.pkg.github.com" >> ~/.npmrc
+```
 
-### Step 3: Publish
+### Publish
 
-\`\`\`bash
-npm publish
-\`\`\`
+```bash
+cd packages/sdk && npm publish
+cd packages/cli && npm publish
+```
 
-### Installing from GitHub Packages
+> **Note:** `create-offer-hub-orchestrator` has no scope, so it can only be published to npm, not GitHub Packages.
 
-Users will need to configure their `.npmrc`:
+### Consumers installing from GitHub Packages
 
-\`\`\`
+They need to add to their `.npmrc`:
+
+```
 @offerhub:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=YOUR_GITHUB_TOKEN
-\`\`\`
+//npm.pkg.github.com/:_authToken=THEIR_GITHUB_TOKEN
+```
 
 ---
 
-## 🔒 Private NPM Registry
+## Automated Publishing (CI/CD)
 
-For internal use, you can use a private NPM registry:
+To automate publishing on every GitHub Release, create `.github/workflows/publish.yml`:
 
-### Options:
-1. **Verdaccio**: Self-hosted private NPM registry
-2. **npm private packages**: Pay for private packages on npmjs.com
-3. **GitHub Packages**: Free for public repos, paid for private
-4. **AWS CodeArtifact**: AWS-managed artifact repository
-5. **JFrog Artifactory**: Enterprise artifact management
-
----
-
-## 🤖 Automated Publishing (CI/CD)
-
-### GitHub Actions
-
-Create `.github/workflows/publish-sdk.yml`:
-
-\`\`\`yaml
-name: Publish SDK
+```yaml
+name: Publish npm packages
 
 on:
-  push:
-    tags:
-      - 'sdk-v*'
+  release:
+    types: [published]
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      
-      - uses: actions/setup-node@v3
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
         with:
           node-version: '20'
           registry-url: 'https://registry.npmjs.org'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Build SDK
-        run: npm run build --workspace=packages/sdk
-      
-      - name: Publish to NPM
-        run: npm publish --workspace=packages/sdk --access public
+
+      - run: npm ci
+
+      - run: npm run build
+
+      - name: Publish SDK
+        run: npm publish --access public
+        working-directory: packages/sdk
         env:
-          NODE_AUTH_TOKEN: \${{ secrets.NPM_TOKEN }}
-\`\`\`
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-Usage:
-\`\`\`bash
-# Tag a release
-git tag sdk-v1.0.0
-git push origin sdk-v1.0.0
+      - name: Publish CLI
+        run: npm publish --access public
+        working-directory: packages/cli
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
-# GitHub Actions will automatically publish
-\`\`\`
+      - name: Publish Installer
+        run: npm publish
+        working-directory: packages/create-offerhub
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+```
 
----
-
-## 📝 Checklist Before Publishing
-
-- [ ] Update version number in package.json
-- [ ] Build the package (\`npm run build\`)
-- [ ] Test the package locally (\`npm pack\` and install)
-- [ ] Update CHANGELOG.md with changes
-- [ ] Ensure README.md is up to date
-- [ ] Verify all dependencies are correct
-- [ ] Run tests (\`npm test\`)
-- [ ] Do a dry run (\`npm publish --dry-run\`)
-- [ ] Publish! (\`npm publish --access public\`)
-- [ ] Create GitHub release
-- [ ] Update documentation
+Add `NPM_TOKEN` as a repository secret in GitHub → Settings → Secrets.
 
 ---
 
-## 🛠️ Current Recommendation
+## Troubleshooting
 
-**For now, keep the SDK private** until:
+**`E403 — Two-factor authentication required`**
+→ Your token does not have "Bypass 2FA" enabled. Regenerate it with that option checked.
 
-1. ✅ API is stable and tested
-2. ✅ All features are implemented
-3. ✅ Documentation is complete
-4. ✅ Tests are written
-5. ✅ You're ready to support external users
+**`E404 — Not found`**
+→ The `@offerhub` org does not exist on npm, or you are not a member. Check [npmjs.com/org/offerhub](https://www.npmjs.com/org/offerhub).
 
-**When ready to publish:**
+**`Cannot publish over existing version`**
+→ Bump the version with `npm version patch` before publishing.
 
-1. Choose a unique package name (check if `@offerhub/sdk` is available)
-2. Create an NPM organization `@offerhub`
-3. Follow the publishing steps above
-4. Announce on your website/blog
-5. Monitor issues and support requests
-
----
-
-## 📚 Resources
-
-- [NPM Publishing Guide](https://docs.npmjs.com/packages-and-modules/contributing-packages-to-the-registry)
-- [Semantic Versioning](https://semver.org/)
-- [GitHub Packages](https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-npm-registry)
-- [Verdaccio](https://verdaccio.org/)
-
----
-
-## 🆘 Troubleshooting
-
-### "You do not have permission to publish"
-
-Make sure you're logged in and have access to the `@offerhub` scope:
-\`\`\`bash
-npm whoami
-npm access ls-packages @offerhub
-\`\`\`
-
-### "Package name too similar to existing package"
-
-NPM prevents similar names. Choose a more unique name or add a scope.
-
-### "Cannot publish over existing version"
-
-You need to bump the version:
-\`\`\`bash
-npm version patch
-npm publish
-\`\`\`
-
-### "Missing files in package"
-
-Check your `files` array in package.json and ensure `dist` folder exists.
+**`ENOWORKSPACES — This command does not support workspaces`**
+→ Run `npm publish` from inside the package directory, not from the repo root. Or write the token directly to `~/.npmrc` instead of using `npm set`.
