@@ -19,7 +19,8 @@
     "test:e2e": "./tests/e2e/run-e2e.sh",
     "lint": "echo \"No lint configured\"",
     "prisma:generate": "npx prisma generate --schema packages/database/prisma/schema.prisma",
-    "prisma:migrate": "npx prisma migrate dev --schema packages/database/prisma/schema.prisma"
+    "prisma:migrate": "npx prisma migrate dev --schema packages/database/prisma/schema.prisma",
+    "bootstrap": "tsx --tsconfig tsconfig.base.json scripts/bootstrap.ts"
   },
   "devDependencies": {
     "@babel/preset-env": "^7.29.0",
