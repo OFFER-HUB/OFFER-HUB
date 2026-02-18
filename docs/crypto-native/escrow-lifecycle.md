@@ -534,6 +534,24 @@ curl -s -X POST $BASE/orders/$ORDER/resolution/refund \
 - Seller wallet: `GDWXCMZTP6DVDBJY54NSNPH4CBOEUMVRMSY2XRG4VBSDYORMHJK4QOC3`
 - Platform wallet (disputeResolver): `GDGLXLBOS4DQYDIC3XAHUXXWWEB4OFPFHG2D2KL6AHTZ6W3KC2VTZW4J`
 
+### Crypto-Native Withdrawal Flow -- Verified 2026-02-18
+
+| Step | Endpoint | Result |
+|------|----------|--------|
+| Withdraw USDC | `POST /withdrawals` | `WITHDRAWAL_COMPLETED` (immediate, synchronous) |
+| Verify balance | `GET /users/:id/balance` | `available` deducted correctly |
+
+**Withdrawal details:** $5.00 sent from seller wallet directly to destination Stellar address via `paymentProvider.sendPayment()`.
+
+**Key behavior:** `destinationType: "crypto"` triggers the sync path — no commit step, completes in one call.
+
+**Test data:**
+- Withdrawal: `wd_VSx3RjKlanuOOFa0i4FJXk4OhmtaAxZP`
+- Seller userId: `usr_9DUCBnLofU9lLK88aIbfV3QEAcebHS8o`
+- Seller wallet: `GDWXCMZTP6DVDBJY54NSNPH4CBOEUMVRMSY2XRG4VBSDYORMHJK4QOC3`
+- Destination: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
+- Balance before: `$12.00` → after: `$7.00`
+
 ### Unit Tests -- All Passing
 
 ```

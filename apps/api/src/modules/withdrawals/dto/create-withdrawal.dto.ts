@@ -10,6 +10,14 @@ export type WithdrawalDestinationType = 'bank' | 'crypto' | 'airtm_balance';
  */
 export class CreateWithdrawalDto {
     /**
+     * Internal user ID performing the withdrawal.
+     * Required for server-to-server calls (marketplace API key context).
+     */
+    @IsString()
+    @IsNotEmpty()
+    userId!: string;
+
+    /**
      * Amount to withdraw in decimal format (e.g., "100.00").
      * Must be a positive number with exactly 2 decimal places.
      */

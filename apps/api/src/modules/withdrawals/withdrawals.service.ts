@@ -24,6 +24,7 @@ import {
     WithdrawalFailedPayload,
 } from '../events/types';
 import type { CreateWithdrawalDto } from './dto';
+import { PAYMENT_PROVIDER, PaymentProvider } from '../../providers/payment/payment-provider.interface';
 
 /**
  * Response when creating a withdrawal.
@@ -70,6 +71,7 @@ export class WithdrawalsService {
         @Inject(AirtmPayoutClient) private readonly airtmPayout: AirtmPayoutClient,
         @Inject(AirtmUserClient) private readonly airtmUser: AirtmUserClient,
         @Inject(EventBusService) private readonly eventBus: EventBusService,
+        @Inject(PAYMENT_PROVIDER) private readonly paymentProvider: PaymentProvider,
     ) { }
 
     /**
@@ -89,7 +91,7 @@ export class WithdrawalsService {
      * @returns Withdrawal details
      */
     async createWithdrawal(userId: string, dto: CreateWithdrawalDto): Promise<CreateWithdrawalResponse> {
-        // 1. Get user and verify Airtm linkage
+        // 1. Get user
         const user = await this.prisma.user.findUnique({
             where: { id: userId },
         });
@@ -103,29 +105,7 @@ export class WithdrawalsService {
             });
         }
 
-        if (!user.airtmUserId) {
-            throw new UnprocessableEntityException({
-                error: {
-                    code: ERROR_CODES.AIRTM_USER_NOT_LINKED,
-                    message: 'User must link Airtm account before creating withdrawals',
-                },
-            });
-        }
-
-        // 2. Verify user eligibility in Airtm
-        const eligibility = await this.airtmUser.verifyUserEligibilityById(user.airtmUserId);
-
-        if (!eligibility.eligible) {
-            throw new UnprocessableEntityException({
-                error: {
-                    code: ERROR_CODES.AIRTM_USER_INVALID,
-                    message: `Airtm user not eligible: ${eligibility.failureReason}`,
-                    details: { failureReason: eligibility.failureReason },
-                },
-            });
-        }
-
-        // 3. Check user has sufficient balance
+        // 2. Check user has sufficient balance
         const balance = await this.prisma.balance.findUnique({
             where: { userId },
         });
@@ -146,7 +126,34 @@ export class WithdrawalsService {
             });
         }
 
-        // 4. Reserve the funds (atomic operation)
+        // 3. Branch by destination type
+        if (dto.destinationType === 'crypto') {
+            return this.executeCryptoWithdrawal(userId, dto, availableBalance, requestedAmount);
+        }
+
+        // AirTM path — verify linkage and eligibility
+        if (!user.airtmUserId) {
+            throw new UnprocessableEntityException({
+                error: {
+                    code: ERROR_CODES.AIRTM_USER_NOT_LINKED,
+                    message: 'User must link Airtm account before creating withdrawals',
+                },
+            });
+        }
+
+        const eligibility = await this.airtmUser.verifyUserEligibilityById(user.airtmUserId);
+
+        if (!eligibility.eligible) {
+            throw new UnprocessableEntityException({
+                error: {
+                    code: ERROR_CODES.AIRTM_USER_INVALID,
+                    message: `Airtm user not eligible: ${eligibility.failureReason}`,
+                    details: { failureReason: eligibility.failureReason },
+                },
+            });
+        }
+
+        // 4. Reserve the funds for AirTM (async flow)
         const newAvailable = (availableBalance - requestedAmount).toFixed(2);
         const newReserved = (parseFloat(balance?.reserved || '0') + requestedAmount).toFixed(2);
 
@@ -171,12 +178,6 @@ export class WithdrawalsService {
                 destinationRef: dto.destinationRef,
             },
         });
-
-        // Store metadata (description, fee, failureReason go in metadata since schema doesn't have these columns)
-        const initialMetadata: Record<string, unknown> = {};
-        if (dto.description) {
-            initialMetadata.description = dto.description;
-        }
 
         this.logger.log(`Withdrawal created: ${withdrawalId} for user ${userId}`);
 
@@ -208,12 +209,6 @@ export class WithdrawalsService {
                 description: dto.description,
             });
 
-            // 7. Update withdrawal with Airtm details
-            const metadata: Record<string, unknown> = { ...initialMetadata };
-            if (payout.fee) {
-                metadata.fee = payout.fee.toString();
-            }
-
             const updatedWithdrawal = await this.prisma.withdrawal.update({
                 where: { id: withdrawalId },
                 data: {
@@ -227,7 +222,6 @@ export class WithdrawalsService {
                 `status=${updatedWithdrawal.status}`,
             );
 
-            // Emit appropriate event based on status
             const currentStatus = updatedWithdrawal.status as WithdrawalStatus;
             if (currentStatus === WithdrawalStatus.WITHDRAWAL_COMMITTED) {
                 this.eventBus.emit<WithdrawalCommittedPayload>({
@@ -270,7 +264,6 @@ export class WithdrawalsService {
                 createdAt: updatedWithdrawal.createdAt.toISOString(),
             };
         } catch (error) {
-            // Rollback: release reserved funds and mark as failed
             await this.prisma.balance.update({
                 where: { userId },
                 data: {
@@ -281,12 +274,125 @@ export class WithdrawalsService {
 
             await this.prisma.withdrawal.update({
                 where: { id: withdrawalId },
-                data: {
-                    status: WithdrawalStatus.WITHDRAWAL_FAILED,
-                },
+                data: { status: WithdrawalStatus.WITHDRAWAL_FAILED },
             });
 
-            // Emit WITHDRAWAL_FAILED event
+            this.eventBus.emit<WithdrawalFailedPayload>({
+                eventType: EVENT_CATALOG.WITHDRAWAL_FAILED,
+                aggregateId: withdrawalId,
+                aggregateType: 'Withdrawal',
+                payload: {
+                    withdrawalId,
+                    userId,
+                    amount: dto.amount,
+                    reason: error instanceof Error ? error.message : 'Unknown error',
+                },
+                metadata: EventBusService.createMetadata({ userId }),
+            });
+
+            throw error;
+        }
+    }
+
+    /**
+     * Executes a crypto-native (Stellar) withdrawal.
+     * Sends USDC directly from the user's invisible wallet to the destination address.
+     * Synchronous: completes immediately after the Stellar transaction is confirmed.
+     */
+    private async executeCryptoWithdrawal(
+        userId: string,
+        dto: CreateWithdrawalDto,
+        availableBalance: number,
+        requestedAmount: number,
+    ): Promise<CreateWithdrawalResponse> {
+        const withdrawalId = generateWithdrawalId();
+        const newAvailable = (availableBalance - requestedAmount).toFixed(2);
+
+        // 1. Deduct from available balance immediately
+        await this.prisma.balance.update({
+            where: { userId },
+            data: { available: newAvailable },
+        });
+
+        // 2. Create withdrawal record
+        const withdrawal = await this.prisma.withdrawal.create({
+            data: {
+                id: withdrawalId,
+                userId,
+                amount: dto.amount,
+                currency: dto.currency || 'USD',
+                status: WithdrawalStatus.WITHDRAWAL_CREATED,
+                destinationType: dto.destinationType,
+                destinationRef: dto.destinationRef,
+            },
+        });
+
+        this.logger.log(`Crypto withdrawal created: ${withdrawalId} for user ${userId} → ${dto.destinationRef}`);
+
+        this.eventBus.emit<WithdrawalCreatedPayload>({
+            eventType: EVENT_CATALOG.WITHDRAWAL_CREATED,
+            aggregateId: withdrawalId,
+            aggregateType: 'Withdrawal',
+            payload: {
+                withdrawalId,
+                userId,
+                amount: dto.amount,
+                currency: dto.currency || 'USD',
+                destinationType: dto.destinationType as any,
+                destinationRef: dto.destinationRef,
+            },
+            metadata: EventBusService.createMetadata({ userId }),
+        });
+
+        // 3. Send USDC on Stellar (synchronous)
+        try {
+            const result = await this.paymentProvider.sendPayment(userId, dto.destinationRef, dto.amount);
+
+            // 4. Mark as completed
+            const completed = await this.prisma.withdrawal.update({
+                where: { id: withdrawalId },
+                data: { status: WithdrawalStatus.WITHDRAWAL_COMPLETED },
+            });
+
+            this.logger.log(
+                `Crypto withdrawal ${withdrawalId} completed: txHash=${result.transactionHash}`,
+            );
+
+            this.eventBus.emit<WithdrawalCompletedPayload>({
+                eventType: EVENT_CATALOG.WITHDRAWAL_COMPLETED,
+                aggregateId: withdrawalId,
+                aggregateType: 'Withdrawal',
+                payload: {
+                    withdrawalId,
+                    userId,
+                    amount: completed.amount,
+                    currency: completed.currency,
+                    completedAt: new Date().toISOString(),
+                },
+                metadata: EventBusService.createMetadata({ userId }),
+            });
+
+            return {
+                id: completed.id,
+                amount: completed.amount,
+                currency: completed.currency,
+                status: WithdrawalStatus.WITHDRAWAL_COMPLETED,
+                destinationType: completed.destinationType,
+                committed: true,
+                createdAt: completed.createdAt.toISOString(),
+            };
+        } catch (error) {
+            // Rollback: restore available balance
+            await this.prisma.balance.update({
+                where: { userId },
+                data: { available: availableBalance.toFixed(2) },
+            });
+
+            await this.prisma.withdrawal.update({
+                where: { id: withdrawalId },
+                data: { status: WithdrawalStatus.WITHDRAWAL_FAILED },
+            });
+
             this.eventBus.emit<WithdrawalFailedPayload>({
                 eventType: EVENT_CATALOG.WITHDRAWAL_FAILED,
                 aggregateId: withdrawalId,
