@@ -1,12 +1,29 @@
 {
   "name": "@offerhub/sdk",
-  "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Official TypeScript SDK for OFFER-HUB Orchestrator — marketplace escrow & payment infrastructure",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
+  "keywords": [
+    "offerhub",
+    "sdk",
+    "escrow",
+    "stellar",
+    "marketplace",
+    "trustless-work"
+  ],
+  "author": "OfferHub",
+  "license": "MIT",
   "dependencies": {
     "ky": "^1.14.3"
   }

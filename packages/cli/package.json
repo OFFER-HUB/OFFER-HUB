@@ -1,10 +1,17 @@
 {
   "name": "@offerhub/cli",
-  "version": "0.0.0",
+  "version": "1.0.0",
   "description": "CLI tool for OfferHub Orchestrator - API key management and maintenance operations",
   "type": "module",
   "bin": {
     "offerhub": "./dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json && chmod +x dist/index.js",
@@ -20,7 +27,7 @@
   "author": "OfferHub",
   "license": "MIT",
   "dependencies": {
-    "@offerhub/sdk": "*",
+    "@offerhub/sdk": "^1.0.0",
     "commander": "^11.1.0",
     "inquirer": "^9.2.12",
     "chalk": "^5.3.0",

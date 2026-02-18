@@ -24,25 +24,28 @@ export function printSuccess(
     console.log('');
     console.log(chalk.bold('Next steps:'));
     console.log('');
-    console.log(`  ${chalk.cyan('1.')} Install dependencies:`);
-    console.log(`     ${chalk.gray('npm install')}`);
+    console.log(`  ${chalk.cyan('1.')} Start the server:`);
+    console.log(`     ${chalk.gray('npm run dev')}          ${chalk.gray('# development')}`);
+    console.log(`     ${chalk.gray('npm run build && npm start')}  ${chalk.gray('# production')}`);
     console.log('');
-    console.log(`  ${chalk.cyan('2.')} Start the development server:`);
-    console.log(`     ${chalk.gray('npm run dev')}`);
-    console.log('');
-    console.log(`  ${chalk.cyan('3.')} Verify health:`);
+    console.log(`  ${chalk.cyan('2.')} Verify health:`);
     console.log(`     ${chalk.gray(`curl http://localhost:${port}/api/v1/health`)}`);
     console.log('');
-    console.log(`  ${chalk.cyan('4.')} Register webhook URLs with Trustless Work:`);
-    console.log(`     ${chalk.gray(`POST https://your-domain.com/api/v1/webhooks/trustless-work`)}`);
+    console.log(`  ${chalk.cyan('3.')} Create your first API key:`);
+    console.log(`     ${chalk.gray(`curl -X POST http://localhost:${port}/api/v1/auth/api-keys \\`)}`);
+    console.log(`     ${chalk.gray(`  -H "Authorization: Bearer $OFFERHUB_MASTER_KEY" \\`)}`);
+    console.log(`     ${chalk.gray(`  -d '{"name":"My Key","scopes":["read","write"]}'`)}`);
+    console.log('');
+    console.log(`  ${chalk.cyan('4.')} Register your webhook URL in Trustless Work dashboard:`);
+    console.log(`     ${chalk.gray(`POST /api/v1/webhooks/trustless-work`)}`);
     console.log('');
 
     if (paymentProvider === 'crypto') {
-        console.log(chalk.yellow.bold('  Reminder: Back up your WALLET_ENCRYPTION_KEY securely!'));
-        console.log(chalk.yellow('  If lost, all user wallets become unrecoverable.'));
+        console.log(chalk.yellow.bold('  ⚠  Back up your WALLET_ENCRYPTION_KEY securely!'));
+        console.log(chalk.yellow('     If lost, all user wallets become unrecoverable.'));
         console.log('');
     }
 
-    console.log(chalk.gray('  Full deployment guide: docs/deployment/README.md'));
+    console.log(chalk.gray('  Full deployment guide: docs/guides/deployment.md'));
     console.log('');
 }

@@ -88,6 +88,11 @@ export function generateEnvFile(config: EnvConfig): string {
     lines.push(`STELLAR_USDC_ISSUER=${stellar.usdcIssuer}`);
     lines.push('');
 
+    // Platform Identity
+    lines.push('# Platform Identity (run: npm run bootstrap → paste the output here)');
+    lines.push('PLATFORM_USER_ID=');
+    lines.push('');
+
     // Public URL
     lines.push('# Public URL (for webhooks)');
     lines.push(`PUBLIC_BASE_URL=${config.publicBaseUrl}`);

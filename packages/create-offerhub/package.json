@@ -1,6 +1,6 @@
 {
   "name": "create-offer-hub-orchestrator",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Interactive installer for OFFER-HUB Orchestrator — sets up environment, database, and initial API key",
   "type": "module",
   "bin": {

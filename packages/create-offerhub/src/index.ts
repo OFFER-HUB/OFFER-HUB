@@ -4,7 +4,7 @@ import inquirer from 'inquirer';
 import chalk from 'chalk';
 import ora from 'ora';
 import { randomBytes } from 'crypto';
-import { writeFileSync, existsSync } from 'fs';
+import { writeFileSync, readFileSync, existsSync } from 'fs';
 import { execSync } from 'child_process';
 import { join } from 'path';
 import { generateEnvFile } from './env-generator.js';
@@ -259,6 +259,31 @@ async function main(): Promise<void> {
             console.log(chalk.red('Check your DATABASE_URL and ensure PostgreSQL is running.'));
             console.log(chalk.gray('You can run migrations manually later:'));
             console.log(chalk.gray('  npx prisma migrate deploy --schema packages/database/prisma/schema.prisma'));
+            console.log('');
+        }
+
+        // --- Bootstrap platform user ---
+        const bootstrapSpinner = ora('Bootstrapping platform user (Stellar wallet)...').start();
+        try {
+            const bootstrapOutput = execSync('npm run bootstrap', {
+                cwd,
+                stdio: 'pipe',
+                env: { ...process.env },
+            }).toString();
+
+            const match = bootstrapOutput.match(/PLATFORM_USER_ID=(usr_\S+)/);
+            if (match) {
+                const platformUserId = match[1];
+                const envContent = readFileSync(envPath, 'utf-8');
+                writeFileSync(envPath, envContent.replace('PLATFORM_USER_ID=', `PLATFORM_USER_ID=${platformUserId}`), 'utf-8');
+                bootstrapSpinner.succeed(`Platform user created: ${platformUserId}`);
+            } else {
+                throw new Error('Could not parse PLATFORM_USER_ID from bootstrap output');
+            }
+        } catch {
+            bootstrapSpinner.warn('Bootstrap failed — run manually after setup:');
+            console.log(chalk.gray('  npm run bootstrap'));
+            console.log(chalk.gray('  Then paste the PLATFORM_USER_ID= value into your .env'));
             console.log('');
         }
     }
