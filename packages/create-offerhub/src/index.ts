@@ -241,14 +241,24 @@ async function main(): Promise<void> {
     writeFileSync(envPath, envContent, 'utf-8');
     spinner.succeed('.env file created');
 
+    // --- Prisma generate (always required) ---
+    const generateSpinner = ora('Generating Prisma client...').start();
+    try {
+        execSync('npx prisma generate --schema packages/database/prisma/schema.prisma', {
+            cwd,
+            stdio: 'pipe',
+        });
+        generateSpinner.succeed('Prisma client generated');
+    } catch (error) {
+        generateSpinner.fail('Prisma client generation failed');
+        console.log(chalk.red('Run manually: npx prisma generate --schema packages/database/prisma/schema.prisma'));
+        console.log('');
+    }
+
     // --- Run migrations ---
     if (answers.runMigrations) {
         const migrationSpinner = ora('Running database migrations...').start();
         try {
-            execSync('npx prisma generate --schema packages/database/prisma/schema.prisma', {
-                cwd,
-                stdio: 'pipe',
-            });
             execSync('npx prisma migrate deploy --schema packages/database/prisma/schema.prisma', {
                 cwd,
                 stdio: 'pipe',
@@ -257,8 +267,7 @@ async function main(): Promise<void> {
         } catch (error) {
             migrationSpinner.fail('Database migration failed');
             console.log(chalk.red('Check your DATABASE_URL and ensure PostgreSQL is running.'));
-            console.log(chalk.gray('You can run migrations manually later:'));
-            console.log(chalk.gray('  npx prisma migrate deploy --schema packages/database/prisma/schema.prisma'));
+            console.log(chalk.gray('Run manually: npx prisma migrate deploy --schema packages/database/prisma/schema.prisma'));
             console.log('');
         }
 
