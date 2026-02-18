@@ -2,7 +2,9 @@
 
 > How the AirTM fiat payment provider works in OFFER-HUB — deposits (top-ups), withdrawals, and webhooks.
 
-> **Status:** AirTM integration is implemented but requires an Enterprise AirTM account. Contact AirTM at [enterprise.airtm.com](https://enterprise.airtm.com) to request API access.
+> **Status (Phase 1 — Current):** Setting `PAYMENT_PROVIDER=airtm` throws a `ConfigurationError` at startup with the message: _"Set PAYMENT_PROVIDER=crypto to use Stellar USDC wallets. AirTM support is planned for a future release."_ Use `PAYMENT_PROVIDER=crypto` for production deployments.
+>
+> **Status (Phase 2 — Planned):** Full `AirtmProvider` implementation is a future milestone. When available, it will require an Enterprise AirTM account. Contact [enterprise.airtm.com](https://enterprise.airtm.com) to request API access in advance.
 
 ---
 

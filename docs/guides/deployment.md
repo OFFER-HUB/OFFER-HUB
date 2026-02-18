@@ -128,13 +128,23 @@ npm run prisma:migrate
 
 > This must use DIRECT_URL (port 5432). See [Running Database Migrations](#running-database-migrations).
 
-### 5. Build
+### 5. Bootstrap the platform user
+
+Run once after migrations (idempotent — safe to run again):
+
+```bash
+npm run bootstrap
+```
+
+Copy the output `PLATFORM_USER_ID=usr_xxx` into your `.env` file. This creates the Stellar wallet used as `disputeResolver` and `platformAddress` in all escrow contracts.
+
+### 6. Build
 
 ```bash
 npm run build
 ```
 
-### 6. Start
+### 7. Start
 
 ```bash
 # Direct
@@ -147,7 +157,7 @@ pm2 start apps/api/dist/main.js --name offerhub-api
 npm run dev
 ```
 
-### 7. Create the first API key
+### 8. Create the first API key
 
 ```bash
 curl -X POST http://your-domain/api/v1/auth/api-keys \
@@ -188,7 +198,7 @@ TRUSTLESS_API_KEY=<your-tw-api-key>
 TRUSTLESS_WEBHOOK_SECRET=<your-tw-webhook-secret>
 
 # Platform Identity
-PLATFORM_USER_ID=<usr_xxx>  # Created via POST /users after first deploy
+PLATFORM_USER_ID=  # Run: npm run bootstrap → outputs the value to paste here
 
 # Public URL (for callbacks)
 PUBLIC_BASE_URL=https://your-orchestrator-domain.com

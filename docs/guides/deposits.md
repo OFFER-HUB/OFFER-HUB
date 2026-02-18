@@ -118,7 +118,39 @@ Domain event emitted: balance.credited
 | Multi-instance safety | Run only ONE instance with `DISABLE_BLOCKCHAIN_MONITOR=true` on others |
 | Restart behavior | Payments during downtime are NOT auto-detected — use reconciliation job |
 
-> **Warning:** If the Orchestrator was restarted and a payment arrived during downtime, it won't be auto-credited. The reconciliation worker handles this case, but for time-sensitive scenarios, implement a manual check.
+> **Warning:** If the Orchestrator was restarted and a payment arrived during downtime, it won't be auto-credited. The reconciliation worker handles this automatically — see below.
+
+---
+
+### Reconciliation Worker (Missed Deposits)
+
+Because `BlockchainMonitorService` uses `.cursor('now')`, any payment made while the server was down (deploys, restarts, SSE drops) would be silently missed. To handle this, a BullMQ background job runs every 5 minutes and catches up:
+
+**How it works:**
+1. Fetches all active user wallets from the DB
+2. Queries Horizon for payments in the last 24 hours (`order=desc&limit=50`)
+3. Filters for incoming USDC payments only
+4. For each payment, checks the `ProcessedTransaction` table — if the `transactionHash` is already there, skip
+5. If not processed: credits the balance, writes to `ProcessedTransaction`, emits `balance.credited`
+
+**Deduplication:** Both the real-time monitor and the reconciliation worker write to the same `ProcessedTransaction` table in the same DB transaction as the balance credit. This makes double-crediting impossible even in race conditions.
+
+**Event source field:** Reconciled deposits use `source: 'stellar_deposit_reconciled'` instead of `stellar_deposit`. Your webhook handler should treat both the same:
+
+```typescript
+es.addEventListener('balance.credited', (event) => {
+  const { source, userId, amount } = JSON.parse(event.data).payload;
+  if (source === 'stellar_deposit' || source === 'stellar_deposit_reconciled') {
+    notifyUser(userId, `Deposit of ${amount} USDC confirmed`);
+  }
+});
+```
+
+**Configuration:**
+```env
+# Disable the reconciliation worker (not recommended for production)
+RECONCILIATION_ENABLED=false
+```
 
 ---
 
