@@ -489,6 +489,28 @@ curl -s -X POST $BASE/orders/$ORDER/resolution/refund \
 - Buyer wallet: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
 - Seller wallet: `GDWXCMZTP6DVDBJY54NSNPH4CBOEUMVRMSY2XRG4VBSDYORMHJK4QOC3`
 
+### Dispute → FULL_REFUND Resolution Flow -- Verified 2026-02-18
+
+| Step | Endpoint | Result |
+|------|----------|--------|
+| Create order | `POST /api/v1/orders` | `ORDER_CREATED` |
+| Reserve funds | `POST /orders/{id}/reserve` | `FUNDS_RESERVED` |
+| Create escrow | `POST /orders/{id}/escrow` | `ESCROW_FUNDING` (contract: `CDAEJ3...`) |
+| Fund escrow | `POST /orders/{id}/escrow/fund` | `IN_PROGRESS` (escrow: `FUNDED`) |
+| Open dispute | `POST /orders/{id}/resolution/dispute` | `OPEN` (dispute: `dsp_zWAF...`) |
+| Assign dispute | `POST /disputes/{id}/assign` | `UNDER_REVIEW` |
+| Resolve FULL_REFUND | `POST /disputes/{id}/resolve` | `RESOLVED` (decision: `FULL_REFUND`) |
+| **Final state** | -- | Order: `CLOSED`, Dispute: `RESOLVED` |
+
+**Full refund:** 100% ($2.00) returned to buyer via FULL_REFUND decision.
+
+**Test data:**
+- Order: `ord_PVTgqAMDqI8v1oOLdcozzqmnWQXNzpCK`
+- Dispute: `dsp_zWAFVtrXWPOlUru2NYWkxRkGfIaf1LGk`
+- Contract: `CDAEJ3DS2ZF5ZXBPBGZX7C6VTID5237Z3MUCQFKTKGULDXOUWS4FDNJR`
+- Buyer wallet: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
+- Platform wallet (disputeResolver): `GDGLXLBOS4DQYDIC3XAHUXXWWEB4OFPFHG2D2KL6AHTZ6W3KC2VTZW4J`
+
 ### Dispute → SPLIT Resolution Flow -- Verified 2026-02-17
 
 | Step | Endpoint | Result |
