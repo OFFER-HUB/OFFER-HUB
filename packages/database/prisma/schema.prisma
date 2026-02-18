@@ -369,11 +369,25 @@ model IdempotencyKey {
   status         IdempotencyStatus @default(PROCESSING)
   responseStatus Int?              @map("response_status")
   responseBody   Json?             @map("response_body")
-  
+
   createdAt DateTime @default(now()) @map("created_at")
   expiresAt DateTime @map("expires_at")
 
   @@unique([key, marketplaceId])
   @@index([expiresAt])
   @@map("idempotency_keys")
+}
+
+model ProcessedTransaction {
+  id              String   @id @default(cuid())
+  transactionHash String   @unique @map("transaction_hash")
+  userId          String   @map("user_id")
+  amount          String
+  // stellar_deposit (real-time) | stellar_deposit_reconciled (catch-up worker)
+  source          String   @default("stellar_deposit")
+  processedAt     DateTime @default(now()) @map("processed_at")
+
+  @@index([userId])
+  @@index([processedAt])
+  @@map("processed_transactions")
 }
