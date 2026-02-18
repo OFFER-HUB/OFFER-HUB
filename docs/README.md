@@ -1,26 +1,33 @@
 # OFFER-HUB Orchestrator
 
-Self-hosted payments orchestrator that lets marketplaces offer a Web2 experience (balance, top-ups, checkout, withdrawals) using Airtm for funds management and Trustless Work for non-custodial escrow on Stellar.
+Self-hosted payments and escrow backend for marketplaces. Provides user balances, USDC escrow on Stellar (via Trustless Work), and withdrawals. Uses invisible server-side Stellar wallets when `PAYMENT_PROVIDER=crypto`, or AirTM for fiat flows.
 
 ## Quick Start
 
 ```bash
-# 1. Create an Orchestrator instance
-npm create offer-hub-orchestrator@latest
+# 1. Clone and install
+git clone https://github.com/OFFER-HUB/OFFER-HUB.git && cd OFFER-HUB
+npm install && cp .env.example .env   # fill .env
 
-# 2. Configure and boot
-cd offer-hub-orchestrator
-cp .env.example .env
-docker compose up
+# 2. Run migrations and start
+npm run prisma:migrate && npm run dev   # API on http://localhost:4000
 
 # 3. Integrate in your marketplace
 npm i @offerhub/sdk
 ```
 
+> **New to the Orchestrator?** Start with the [Marketplace Integration Guide](./guides/marketplace-integration.md) — it covers prerequisites, quick start, and all flow guides with curl + TypeScript examples.
+
 ## Documentation
 
 > [!TIP]
 > **For AI Contributors**: Start with [AI.md](./AI.md) - it contains all standards synthesized in one document.
+
+### Guides
+
+- [Marketplace Integration Guide](./guides/marketplace-integration.md) — **Start here** if you're integrating the Orchestrator into your own marketplace
+- [Scaling & Customization](./guides/scaling-customization.md) — How to scale, extend, and safely modify the Orchestrator
+- [Crypto-Native: Escrow Lifecycle](./crypto-native/escrow-lifecycle.md) — Verified E2E flow on Stellar testnet
 
 ### Architecture
 
@@ -40,7 +47,8 @@ npm i @offerhub/sdk
 |---------|---------------|
 | Auth | [auth.md](./api/endpoints/auth.md) |
 | Users | [users.md](./api/endpoints/users.md) |
-| Top-ups | [topups.md](./api/endpoints/topups.md) |
+| Top-ups (AirTM deposit) | [topups.md](./api/endpoints/topups.md) |
+| Wallet (crypto deposit) | [wallet.md](./api/endpoints/wallet.md) |
 | Orders | [orders.md](./api/endpoints/orders.md) |
 | Escrow | [escrow.md](./api/endpoints/escrow.md) |
 | Release/Refund | [release-refund.md](./api/endpoints/release-refund.md) |
