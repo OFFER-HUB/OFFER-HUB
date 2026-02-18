@@ -3,6 +3,7 @@ import type {
     OpenDisputeRequest,
     AssignDisputeRequest,
     ResolveDisputeRequest,
+    ListDisputesParams,
     Dispute,
 } from '../types';
 
@@ -11,6 +12,37 @@ import type {
  * Handles dispute management operations
  */
 export class DisputesResource extends BaseResource {
+    /**
+     * List disputes with optional filters
+     *
+     * @param params - Optional filters: orderId, status, openedBy
+     * @returns Promise resolving to array of disputes
+     *
+     * @example
+     * ```typescript
+     * // All disputes
+     * const disputes = await sdk.disputes.list();
+     *
+     * // Disputes for a specific order
+     * const disputes = await sdk.disputes.list({ orderId: 'ord_abc123' });
+     *
+     * // Open disputes opened by buyer
+     * const disputes = await sdk.disputes.list({ status: 'OPEN', openedBy: 'BUYER' });
+     * ```
+     */
+    async list(params?: ListDisputesParams): Promise<Dispute[]> {
+        const query = new URLSearchParams();
+        if (params?.orderId) query.set('orderId', params.orderId);
+        if (params?.status) query.set('status', params.status);
+        if (params?.openedBy) query.set('openedBy', params.openedBy);
+
+        const qs = query.toString();
+        const response = await this.client.get<{ success: boolean; data: Dispute[] }>(
+            `disputes${qs ? `?${qs}` : ''}`,
+        );
+        return response.data;
+    }
+
     /**
      * Open a dispute for an order
      *
@@ -21,8 +53,8 @@ export class DisputesResource extends BaseResource {
      * @example
      * ```typescript
      * const dispute = await sdk.disputes.open('ord_abc123', {
-     *   reason: 'Work not delivered as promised',
-     *   evidence: 'Screenshots and chat logs attached'
+     *   openedBy: 'BUYER',
+     *   reason: 'NOT_DELIVERED',
      * });
      * ```
      */
@@ -56,13 +88,13 @@ export class DisputesResource extends BaseResource {
      * Assign dispute to support agent
      *
      * @param disputeId - Dispute ID
-     * @param data - Assignment data
+     * @param data - Assignment data (assignedTo: agent ID or name)
      * @returns Promise resolving to updated dispute
      *
      * @example
      * ```typescript
      * const dispute = await sdk.disputes.assign('dsp_abc123', {
-     *   supportAgentId: 'agent_456'
+     *   assignedTo: 'agent_support01'
      * });
      * ```
      */
@@ -84,23 +116,23 @@ export class DisputesResource extends BaseResource {
      * @example
      * ```typescript
      * // Full release to seller
-     * const dispute = await sdk.disputes.resolve('dsp_abc123', {
-     *   resolution: 'RELEASE_TO_SELLER',
-     *   notes: 'Evidence shows work was completed'
+     * await sdk.disputes.resolve('dsp_abc123', {
+     *   decision: 'FULL_RELEASE',
+     *   note: 'Evidence shows work was completed',
      * });
      *
      * // Full refund to buyer
-     * const dispute = await sdk.disputes.resolve('dsp_abc123', {
-     *   resolution: 'REFUND_TO_BUYER',
-     *   notes: 'Work was not delivered'
+     * await sdk.disputes.resolve('dsp_abc123', {
+     *   decision: 'FULL_REFUND',
+     *   note: 'Work was not delivered',
      * });
      *
      * // Split decision
-     * const dispute = await sdk.disputes.resolve('dsp_abc123', {
-     *   resolution: 'SPLIT',
-     *   sellerAmount: '60.00',
-     *   buyerAmount: '40.00',
-     *   notes: 'Partial work completed'
+     * await sdk.disputes.resolve('dsp_abc123', {
+     *   decision: 'SPLIT',
+     *   releaseAmount: '60.00',
+     *   refundAmount: '20.00',
+     *   note: 'Partial work completed',
      * });
      * ```
      */

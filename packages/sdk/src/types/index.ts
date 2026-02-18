@@ -300,45 +300,60 @@ export interface Withdrawal {
 // ==================== Dispute Types ====================
 
 export enum DisputeStatus {
-    DISPUTE_OPEN = 'DISPUTE_OPEN',
-    DISPUTE_IN_REVIEW = 'DISPUTE_IN_REVIEW',
-    DISPUTE_RESOLVED = 'DISPUTE_RESOLVED',
+    OPEN = 'OPEN',
+    UNDER_REVIEW = 'UNDER_REVIEW',
+    RESOLVED = 'RESOLVED',
 }
 
-export enum DisputeResolution {
-    RELEASE_TO_SELLER = 'RELEASE_TO_SELLER',
-    REFUND_TO_BUYER = 'REFUND_TO_BUYER',
+export enum DisputeOpenedBy {
+    BUYER = 'BUYER',
+    SELLER = 'SELLER',
+}
+
+export enum DisputeReason {
+    NOT_DELIVERED = 'NOT_DELIVERED',
+    QUALITY_ISSUE = 'QUALITY_ISSUE',
+    OTHER = 'OTHER',
+}
+
+export enum ResolutionDecision {
+    FULL_RELEASE = 'FULL_RELEASE',
+    FULL_REFUND = 'FULL_REFUND',
     SPLIT = 'SPLIT',
 }
 
 export interface OpenDisputeRequest {
-    reason: string;
-    evidence?: string;
+    openedBy: DisputeOpenedBy;
+    reason: DisputeReason;
+    evidence?: string[];
 }
 
 export interface AssignDisputeRequest {
-    supportAgentId: string;
+    assignedTo: string;
 }
 
 export interface ResolveDisputeRequest {
-    resolution: DisputeResolution;
-    notes?: string;
-    sellerAmount?: string;
-    buyerAmount?: string;
+    decision: ResolutionDecision;
+    releaseAmount?: string;
+    refundAmount?: string;
+    note?: string;
+}
+
+export interface ListDisputesParams {
+    orderId?: string;
+    status?: DisputeStatus;
+    openedBy?: DisputeOpenedBy;
 }
 
 export interface Dispute {
     id: string;
     orderId: string;
-    reason: string;
-    evidence?: string;
+    openedBy: DisputeOpenedBy;
+    reason: DisputeReason;
+    evidence?: string[];
     status: DisputeStatus;
-    resolution?: DisputeResolution;
-    notes?: string;
-    sellerAmount?: string;
-    buyerAmount?: string;
-    supportAgentId?: string;
-    resolvedAt?: string;
+    resolutionDecision?: ResolutionDecision;
+    decisionNote?: string;
     createdAt: string;
     updatedAt: string;
     order?: Order;
