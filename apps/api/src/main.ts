@@ -51,18 +51,28 @@ async function bootstrap() {
   await app.listen(port);
   logger.log(`API listening on port ${port}`);
 
-  // Handle clean exit for signals
-  process.on('SIGINT', async () => {
-    logger.log('Application is shutting down (SIGINT)...');
-    await app.close();
-    process.exit(0);
-  });
+  // Graceful shutdown: stops HTTP server, drains BullMQ workers, closes Horizon SSE streams
+  const gracefulShutdown = async (signal: string) => {
+    logger.log(`[Shutdown] Received ${signal} — shutting down gracefully...`);
 
-  process.on('SIGTERM', async () => {
-    logger.log('Application is shutting down (SIGTERM)...');
+    // Force-exit after 30s if shutdown hangs
+    const forceExit = setTimeout(() => {
+      logger.error('[Shutdown] Graceful shutdown timed out (30s) — forcing exit');
+      process.exit(1);
+    }, 30_000);
+    forceExit.unref();
+
     await app.close();
+    clearTimeout(forceExit);
+
+    logger.log('[Shutdown] Clean shutdown complete');
     process.exit(0);
-  });
+  };
+
+  process.on('SIGINT', () => { void gracefulShutdown('SIGINT'); });
+  process.on('SIGTERM', () => { void gracefulShutdown('SIGTERM'); });
+
+  logger.log('[Shutdown] Graceful shutdown handler registered');
 }
 
 bootstrap();

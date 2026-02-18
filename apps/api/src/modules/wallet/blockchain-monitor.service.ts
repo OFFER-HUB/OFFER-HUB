@@ -30,6 +30,11 @@ export class BlockchainMonitorService implements OnModuleInit, OnModuleDestroy {
       return;
     }
 
+    if (process.env.DISABLE_BLOCKCHAIN_MONITOR === 'true') {
+      this.logger.log('[BlockchainMonitor] Monitoring DISABLED via env var');
+      return;
+    }
+
     await this.startMonitoringAllWallets();
   }
 
