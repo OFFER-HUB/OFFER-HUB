@@ -429,6 +429,16 @@ curl -s -X POST $BASE/orders/$ORDER/resolution/refund \
 
 ## E2E Test Results (Stellar Testnet)
 
+### Cancel Order Flow -- Verified 2026-02-18
+
+| Test | Endpoint | Result |
+|------|----------|--------|
+| Cancel from ORDER_CREATED | `POST /orders/{id}/cancel` | `CLOSED` (no balance change) |
+| Cancel from FUNDS_RESERVED | `POST /orders/{id}/cancel` | `CLOSED` (buyer balance restored) |
+| Cancel from ESCROW_FUNDING | `POST /orders/{id}/cancel` | `INVALID_STATE` (rejected) ✅ |
+
+**Note:** Cancel is only allowed from `ORDER_CREATED` or `FUNDS_RESERVED` states. Once escrow is initiated, the order cannot be cancelled.
+
 ### Release Flow -- Verified 2026-02-17
 
 | Step | Endpoint | Result |
