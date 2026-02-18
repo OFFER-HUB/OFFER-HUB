@@ -4,24 +4,25 @@ Complete guide for developers working with the OfferHub Orchestrator.
 
 ## 🎯 Overview
 
-The OfferHub Orchestrator is a complete payment and escrow system for marketplaces. It consists of:
+The OfferHub Orchestrator is a self-hosted payment and escrow backend for marketplaces. It handles user balances, USDC escrow on Stellar (via Trustless Work), and withdrawals. It does NOT provide a UI or user authentication — those belong to your marketplace. The Orchestrator is server-to-server: your backend calls it with an API key.
 
-- **API** - RESTful API for managing users, orders, and payments
-- **SDK** - TypeScript SDK for easy integration
-- **CLI** - Command-line tool for administration
-- **Worker** - Background job processor (integrated into API)
-- **Database** - PostgreSQL with Prisma ORM
+Components:
+- **API** — RESTful API on port **4000** (NestJS)
+- **SDK** — TypeScript SDK for easy integration (`@offerhub/sdk`)
+- **Worker** — Background jobs integrated into the API (BullMQ + Redis)
+- **Database** — PostgreSQL with Prisma ORM (Supabase recommended)
 
 ---
 
 ## 📚 Documentation Structure
 
-### For Marketplace Developers
+### For Marketplace Developers (Start Here)
 
-1. **[SDK Integration Guide](./sdk/integration-guide.md)** - Start here to integrate OfferHub into your marketplace
-2. **[SDK README](../packages/sdk/README.md)** - Complete SDK API reference with examples
-3. **[API Documentation](./api/README.md)** - REST API endpoints and reference
-4. **[Error Handling](./api/errors.md)** - Understanding and handling errors
+1. **[Marketplace Integration Guide](./guides/marketplace-integration.md)** — Complete guide: prerequisites, quick start, all flow guides with curl + SDK examples
+2. **[SDK Integration Guide](./sdk/integration-guide.md)** — Detailed SDK usage
+3. **[SDK README](../packages/sdk/README.md)** — SDK API reference with examples
+4. **[API Documentation](./api/overview.md)** — REST API endpoints and reference
+5. **[Error Handling](./api/errors.md)** — Understanding and handling errors
 
 ### For Operators & Admins
 
@@ -65,7 +66,7 @@ npm run dev
 import { OfferHubSDK } from '@offerhub/sdk';
 
 const sdk = new OfferHubSDK({
-  apiUrl: 'http://localhost:3000',
+  apiUrl: 'http://localhost:4000',
   apiKey: process.env.OFFERHUB_API_KEY
 });
 
