@@ -5,6 +5,7 @@ import { DatabaseModule } from '../database/database.module';
 import { AirtmModule } from '../../providers/airtm';
 import { AuthModule } from '../auth/auth.module';
 import { EventsModule } from '../events/events.module';
+import { PaymentProviderModule } from '../../providers/payment/payment-provider.module';
 
 /**
  * Module for withdrawal (payout) functionality.
@@ -17,7 +18,7 @@ import { EventsModule } from '../events/events.module';
  * - POST /withdrawals/:id/refresh - Refresh status from Airtm
  */
 @Module({
-    imports: [DatabaseModule, AirtmModule, AuthModule, EventsModule],
+    imports: [DatabaseModule, AirtmModule, AuthModule, EventsModule, PaymentProviderModule],
     controllers: [WithdrawalsController],
     providers: [WithdrawalsService],
     exports: [WithdrawalsService],

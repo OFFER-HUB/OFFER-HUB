@@ -19,17 +19,19 @@ import { CreateWithdrawalDto } from './dto';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
 import { ScopeGuard } from '../../common/guards/scope.guard';
 import { Scopes } from '../../common/decorators/scopes.decorator';
-import { CurrentUser } from '../../common/decorators/current-user.decorator';
 
 /**
  * Controller for withdrawal (payout) operations.
  *
  * Endpoints:
  * - POST /withdrawals - Create a new withdrawal
- * - GET /withdrawals - List user's withdrawals
- * - GET /withdrawals/:id - Get a specific withdrawal
- * - POST /withdrawals/:id/commit - Commit a pending withdrawal
- * - POST /withdrawals/:id/refresh - Refresh withdrawal status from Airtm
+ * - GET /withdrawals?userId= - List user's withdrawals
+ * - GET /withdrawals/:id?userId= - Get a specific withdrawal
+ * - POST /withdrawals/:id/commit?userId= - Commit a pending withdrawal
+ * - POST /withdrawals/:id/refresh?userId= - Refresh withdrawal status from Airtm
+ *
+ * Note: userId is passed in the request body (POST) or as a query param (GET).
+ * The Orchestrator is a server-to-server API — userId identifies the acting user.
  */
 @Controller('withdrawals')
 @UseGuards(ApiKeyGuard, ScopeGuard)
@@ -37,7 +39,7 @@ export class WithdrawalsController {
     constructor(@Inject(WithdrawalsService) private readonly withdrawalsService: WithdrawalsService) {}
 
     /**
-     * Creates a new withdrawal for the authenticated user.
+     * Creates a new withdrawal for a user.
      * By default creates in two-step mode (requires commit).
      * Set commit=true for one-step withdrawal.
      */
@@ -45,19 +47,18 @@ export class WithdrawalsController {
     @Scopes('write')
     @HttpCode(HttpStatus.CREATED)
     async createWithdrawal(
-        @CurrentUser('userId') userId: string,
         @Body() dto: CreateWithdrawalDto,
     ): Promise<CreateWithdrawalResponse> {
-        return this.withdrawalsService.createWithdrawal(userId, dto);
+        return this.withdrawalsService.createWithdrawal(dto.userId, dto);
     }
 
     /**
-     * Lists withdrawals for the authenticated user.
+     * Lists withdrawals for a user.
      */
     @Get()
     @Scopes('read')
     async listWithdrawals(
-        @CurrentUser('userId') userId: string,
+        @Query('userId') userId: string,
         @Query('limit') limit?: string,
         @Query('cursor') cursor?: string,
     ): Promise<{ data: WithdrawalResponse[]; hasMore: boolean; nextCursor?: string }> {
@@ -73,7 +74,7 @@ export class WithdrawalsController {
     @Get(':id')
     @Scopes('read')
     async getWithdrawal(
-        @CurrentUser('userId') userId: string,
+        @Query('userId') userId: string,
         @Param('id') withdrawalId: string,
     ): Promise<WithdrawalResponse> {
         return this.withdrawalsService.getWithdrawal(withdrawalId, userId);
@@ -87,7 +88,7 @@ export class WithdrawalsController {
     @Scopes('write')
     @HttpCode(HttpStatus.OK)
     async commitWithdrawal(
-        @CurrentUser('userId') userId: string,
+        @Query('userId') userId: string,
         @Param('id') withdrawalId: string,
     ): Promise<WithdrawalResponse> {
         return this.withdrawalsService.commitWithdrawal(withdrawalId, userId);
@@ -101,7 +102,7 @@ export class WithdrawalsController {
     @Scopes('read')
     @HttpCode(HttpStatus.OK)
     async refreshWithdrawal(
-        @CurrentUser('userId') userId: string,
+        @Query('userId') userId: string,
         @Param('id') withdrawalId: string,
     ): Promise<WithdrawalResponse> {
         return this.withdrawalsService.refreshWithdrawal(withdrawalId, userId);
