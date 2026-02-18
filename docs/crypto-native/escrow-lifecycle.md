@@ -465,6 +465,30 @@ curl -s -X POST $BASE/orders/$ORDER/resolution/refund \
 - Buyer wallet: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
 - Platform wallet (disputeResolver): `GDGLXLBOS4DQYDIC3XAHUXXWWEB4OFPFHG2D2KL6AHTZ6W3KC2VTZW4J`
 
+### Dispute → FULL_RELEASE Resolution Flow -- Verified 2026-02-18
+
+| Step | Endpoint | Result |
+|------|----------|--------|
+| Create order | `POST /api/v1/orders` | `ORDER_CREATED` |
+| Reserve funds | `POST /orders/{id}/reserve` | `FUNDS_RESERVED` |
+| Create escrow | `POST /orders/{id}/escrow` | `ESCROW_FUNDING` (contract: `CB62PA...`) |
+| Fund escrow | `POST /orders/{id}/escrow/fund` | `IN_PROGRESS` (escrow: `FUNDED`) |
+| Open dispute | `POST /orders/{id}/resolution/dispute` | `OPEN` (dispute: `dsp_vowF...`) |
+| Assign dispute | `POST /disputes/{id}/assign` | `UNDER_REVIEW` |
+| Resolve FULL_RELEASE | `POST /disputes/{id}/resolve` | `RESOLVED` (decision: `FULL_RELEASE`) |
+| **Final state** | -- | Order: `CLOSED`, Dispute: `RESOLVED` |
+
+**Full release:** 100% ($5.00) released to seller via FULL_RELEASE decision.
+
+**API note:** `POST /orders/{id}/resolution/dispute` requires `openedBy: "BUYER"|"SELLER"` (enum), not a user ID.
+
+**Test data:**
+- Order: `ord_hZfeQXPZTeX42WWx7FsZ7FJkxjrTHVf2`
+- Dispute: `dsp_vowFmmgMK7O1h4BSGctQH8zJetcuvSNa`
+- Contract: `CB62PACFHN7HMNYFMU3Z6GJ3WNWG44ZFUTJPYH5KFCYFIFT6TLQ7WHLG`
+- Buyer wallet: `GCV24WNJYX6QC3RX7QBB5GYE66YRDJPU6A4RKMRS33CDDTMWLQDA7Y27`
+- Seller wallet: `GDWXCMZTP6DVDBJY54NSNPH4CBOEUMVRMSY2XRG4VBSDYORMHJK4QOC3`
+
 ### Dispute → SPLIT Resolution Flow -- Verified 2026-02-17
 
 | Step | Endpoint | Result |

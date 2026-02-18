@@ -145,9 +145,9 @@ Content-Type: application/json
 
 ```json
 {
-    "filedBy": "usr_buyer123",
-    "reason": "quality_issue",
-    "description": "The delivered work does not match the requirements"
+    "openedBy": "BUYER",
+    "reason": "QUALITY_ISSUE",
+    "evidence": ["The delivered work does not match the requirements"]
 }
 ```
 
