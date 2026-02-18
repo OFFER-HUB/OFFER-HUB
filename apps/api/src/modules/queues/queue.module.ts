@@ -9,6 +9,7 @@ import { DatabaseModule } from '../database/database.module';
 import { TopUpsModule } from '../topups/topups.module';
 import { WithdrawalsModule } from '../withdrawals/withdrawals.module';
 import { TrustlessWorkModule } from '../../providers/trustless-work/trustless-work.module';
+import { EventsModule } from '../events/events.module';
 
 /**
  * Queue module that registers all BullMQ queues and processors.
@@ -20,6 +21,7 @@ import { TrustlessWorkModule } from '../../providers/trustless-work/trustless-wo
  * - SYNC_TOPUPS: Every 5 minutes, syncs pending topups with Airtm
  * - SYNC_WITHDRAWALS: Every 5 minutes, syncs pending withdrawals with Airtm
  * - SYNC_ESCROWS: Every 10 minutes, verifies escrow states with Trustless Work
+ * - CHECK_MISSED_DEPOSITS: Every 5 minutes, reconciles missed Stellar USDC deposits
  */
 @Module({
     imports: [
@@ -69,6 +71,7 @@ import { TrustlessWorkModule } from '../../providers/trustless-work/trustless-wo
         forwardRef(() => TopUpsModule),
         forwardRef(() => WithdrawalsModule),
         TrustlessWorkModule,
+        EventsModule,
     ],
     providers: [
         WebhookProcessor,

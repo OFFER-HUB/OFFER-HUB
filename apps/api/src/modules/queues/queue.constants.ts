@@ -44,6 +44,7 @@ export const JOB_TYPES = {
     SYNC_TOPUPS: 'reconciliation:sync-topups',
     SYNC_WITHDRAWALS: 'reconciliation:sync-withdrawals',
     SYNC_ESCROWS: 'reconciliation:sync-escrows',
+    CHECK_MISSED_DEPOSITS: 'reconciliation:check-missed-deposits',
 
     // Notification jobs
     SEND_EMAIL: 'notification:email',

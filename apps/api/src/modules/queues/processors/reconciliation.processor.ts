@@ -1,10 +1,14 @@
 import { Processor, WorkerHost, OnWorkerEvent, InjectQueue } from '@nestjs/bullmq';
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
+import { Horizon } from '@stellar/stellar-sdk';
 import { PrismaService } from '../../database/prisma.service';
 import { TopUpsService } from '../../topups/topups.service';
 import { WithdrawalsService } from '../../withdrawals/withdrawals.service';
 import { EscrowClient } from '../../../providers/trustless-work/clients/escrow.client';
+import { TrustlessWorkConfig } from '../../../providers/trustless-work/trustless-work.config';
+import { EventBusService } from '../../events/event-bus.service';
+import { EVENT_CATALOG } from '../../events/event-catalog';
 import { QUEUE_NAMES, JOB_TYPES } from '../queue.constants';
 import { QueueService } from '../queue.service';
 import {
@@ -64,6 +68,8 @@ export class ReconciliationProcessor extends WorkerHost {
     private readonly logger = new Logger(ReconciliationProcessor.name);
     private activeJobs: Set<string> = new Set(); // Track active jobs locally
 
+    private readonly horizonServer: Horizon.Server;
+
     constructor(
         @InjectQueue(QUEUE_NAMES.RECONCILIATION) private readonly reconciliationQueue: Queue,
         private readonly prisma: PrismaService,
@@ -71,8 +77,11 @@ export class ReconciliationProcessor extends WorkerHost {
         private readonly withdrawalsService: WithdrawalsService,
         private readonly escrowClient: EscrowClient,
         private readonly queueService: QueueService,
+        @Inject(TrustlessWorkConfig) private readonly stellarConfig: TrustlessWorkConfig,
+        @Inject(EventBusService) private readonly eventBus: EventBusService,
     ) {
         super();
+        this.horizonServer = new Horizon.Server(stellarConfig.stellarHorizonUrl);
     }
 
     /**
@@ -147,6 +156,13 @@ export class ReconciliationProcessor extends WorkerHost {
                     break;
                 case JOB_TYPES.SYNC_ESCROWS:
                     await this.syncEscrows(config, metrics);
+                    break;
+                case JOB_TYPES.CHECK_MISSED_DEPOSITS:
+                    if (process.env.RECONCILIATION_ENABLED === 'false') {
+                        this.logger.debug('[Reconciliation] Deposit reconciliation DISABLED via env var');
+                        break;
+                    }
+                    await this.checkMissedDeposits(config, metrics);
                     break;
                 default:
                     this.logger.warn(`Unknown reconciliation job type: ${job.name}`);
@@ -421,6 +437,121 @@ export class ReconciliationProcessor extends WorkerHost {
                 count: metrics.discrepancies,
             });
         }
+    }
+
+    /**
+     * Check for missed Stellar USDC deposits during server downtime.
+     *
+     * Queries Horizon for recent payments on all active wallets and credits any
+     * that were not captured by the real-time SSE stream (BlockchainMonitorService).
+     * Deduplication is handled via the ProcessedTransaction table.
+     */
+    async checkMissedDeposits(config: ReconciliationConfig, metrics: JobMetrics): Promise<void> {
+        const lookbackHours = (config as any).lookbackHours ?? 24;
+        const lookbackDate = new Date(Date.now() - lookbackHours * 60 * 60 * 1000);
+        const batchSize = config.batchSize ?? 100;
+
+        const wallets = await this.prisma.wallet.findMany({
+            where: { isActive: true, type: 'INVISIBLE' },
+            select: { userId: true, publicKey: true },
+            take: batchSize,
+        });
+
+        metrics.recordsProcessed = wallets.length;
+        let depositsFound = 0;
+
+        for (const wallet of wallets) {
+            try {
+                // Fetch recent payments from Horizon (newest first, limit 50)
+                const paymentsPage = await this.horizonServer
+                    .payments()
+                    .forAccount(wallet.publicKey)
+                    .order('desc')
+                    .limit(50)
+                    .call();
+
+                for (const record of paymentsPage.records) {
+                    const payment = record as any;
+
+                    // Only incoming USDC payments
+                    if (payment.type !== 'payment') continue;
+                    if (payment.to !== wallet.publicKey) continue;
+                    if (payment.asset_code !== this.stellarConfig.stellarUsdcAssetCode) continue;
+                    if (payment.asset_issuer !== this.stellarConfig.stellarUsdcIssuer) continue;
+
+                    // Only within lookback window
+                    const paymentDate = new Date(payment.created_at);
+                    if (paymentDate < lookbackDate) break; // results are ordered desc
+
+                    const txHash = payment.transaction_hash;
+                    const amount = payment.amount;
+
+                    // Skip if already processed (real-time or previous reconciliation)
+                    const alreadyProcessed = await this.prisma.processedTransaction.findUnique({
+                        where: { transactionHash: txHash },
+                    });
+                    if (alreadyProcessed) continue;
+
+                    // Credit the missed deposit
+                    const balance = await this.prisma.balance.findFirst({
+                        where: { userId: wallet.userId },
+                    });
+                    if (!balance) {
+                        this.logger.warn(`No balance record for user ${wallet.userId}, skipping tx ${txHash}`);
+                        continue;
+                    }
+
+                    const newAvailable = (
+                        parseFloat(balance.available.toString()) + parseFloat(amount)
+                    ).toFixed(2);
+
+                    await this.prisma.$transaction([
+                        this.prisma.balance.update({
+                            where: { id: balance.id },
+                            data: { available: newAvailable },
+                        }),
+                        this.prisma.processedTransaction.create({
+                            data: {
+                                transactionHash: txHash,
+                                userId: wallet.userId,
+                                amount,
+                                source: 'stellar_deposit_reconciled',
+                            },
+                        }),
+                    ]);
+
+                    this.eventBus.emit({
+                        eventType: EVENT_CATALOG.BALANCE_CREDITED,
+                        aggregateId: wallet.userId,
+                        aggregateType: 'User',
+                        payload: {
+                            userId: wallet.userId,
+                            amount,
+                            source: 'stellar_deposit_reconciled',
+                            transactionHash: txHash,
+                            newBalance: newAvailable,
+                        },
+                        metadata: {},
+                    });
+
+                    depositsFound++;
+                    metrics.recordsSynced++;
+                    this.logger.log(
+                        `[Reconciliation] Missed deposit credited: ${amount} USDC to user ${wallet.userId} (tx: ${txHash})`,
+                    );
+                }
+            } catch (error) {
+                const msg = error instanceof Error ? error.message : 'Unknown';
+                // Horizon returns 404 for unfunded accounts — expected, not a real error
+                if (msg.includes('404')) continue;
+                metrics.errors++;
+                this.logger.warn(`[Reconciliation] Failed to check wallet ${wallet.publicKey}: ${msg}`);
+            }
+        }
+
+        this.logger.log(
+            `[Reconciliation] Checked ${wallets.length} wallets, found ${depositsFound} missed deposit(s)`,
+        );
     }
 
     /**
