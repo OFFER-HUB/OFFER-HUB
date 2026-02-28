@@ -47,6 +47,14 @@ import type { CreateOrderDto, MilestoneDto } from './dto';
 export interface OrderWithRelations extends Order {
     escrow?: Escrow | null;
     milestones?: Milestone[];
+    buyer?: {
+        id: string;
+        email: string;
+    };
+    seller?: {
+        id: string;
+        email: string;
+    };
 }
 
 /**
@@ -486,6 +494,12 @@ export class OrdersService {
             });
 
             this.logger.log(`Escrow created for order ${orderId}: ${escrow.id} (order=${orderStatus})`);
+
+            // Auto-fund escrow if contract was deployed successfully
+            if (contractId) {
+                this.logger.log(`Auto-funding escrow for order ${orderId}`);
+                return await this.fundEscrow(orderId);
+            }
         } catch (error) {
             this.logger.error(`Failed to create escrow for order ${orderId}:`, error);
 
@@ -557,12 +571,9 @@ export class OrdersService {
         const buyerAddress = buyerDeposit.address!;
 
         try {
-            await this.balanceService.deductReserved(order.buyerId, {
-                amount: order.amount,
-                currency: order.currency,
-                orderId: order.id,
-                description: `Escrow funded for order ${order.id}`,
-            });
+            // Note: Funds remain in reserved balance until release
+            // The Stellar escrow is an additional layer of security
+            // We do NOT deduct from reserved here - that happens on release
 
             const fundResult = await this.escrowClient.fundEscrow(
                 order.escrow.trustlessContractId!,
@@ -808,6 +819,18 @@ export class OrdersService {
             include: {
                 escrow: true,
                 milestones: true,
+                buyer: {
+                    select: {
+                        id: true,
+                        email: true,
+                    },
+                },
+                seller: {
+                    select: {
+                        id: true,
+                        email: true,
+                    },
+                },
             },
         });
 
@@ -853,6 +876,18 @@ export class OrdersService {
             include: {
                 escrow: true,
                 milestones: true,
+                buyer: {
+                    select: {
+                        id: true,
+                        email: true,
+                    },
+                },
+                seller: {
+                    select: {
+                        id: true,
+                        email: true,
+                    },
+                },
             },
             orderBy: { createdAt: 'desc' },
             take: limit + 1,
@@ -867,6 +902,69 @@ export class OrdersService {
         const nextCursor = hasMore ? data[data.length - 1]?.id : undefined;
 
         return { data, hasMore, nextCursor };
+    }
+
+    /**
+     * Mark order as completed by seller.
+     * Updates metadata to indicate work is done.
+     *
+     * @param orderId - The order ID
+     * @returns Updated order
+     */
+    async markAsCompleted(orderId: string): Promise<OrderWithRelations> {
+        const order = await this.getOrder(orderId);
+
+        if (order.status !== OrderStatus.IN_PROGRESS) {
+            throw new BadRequestException(
+                `Cannot mark order as completed. Order must be in IN_PROGRESS status (current: ${order.status})`,
+            );
+        }
+
+        const updatedOrder = await this.prisma.$transaction(
+            async (tx) => {
+                const updated = await tx.order.update({
+                    where: { id: orderId },
+                    data: {
+                        metadata: {
+                            ...(order.metadata as any || {}),
+                            completedBySeller: true,
+                            completedAt: new Date().toISOString(),
+                        },
+                    },
+                    include: {
+                        buyer: { select: { id: true, email: true } },
+                        seller: { select: { id: true, email: true } },
+                        service: { select: { id: true, title: true } },
+                        escrow: true,
+                        milestones: true,
+                    },
+                });
+
+                await tx.auditLog.create({
+                    data: {
+                        id: generateAuditLogId(),
+                        marketplaceId: 'system',
+                        userId: order.sellerId,
+                        action: 'ORDER_MARKED_COMPLETED',
+                        resourceType: 'order',
+                        resourceId: orderId,
+                        payloadBefore: { metadata: order.metadata },
+                        payloadAfter: { metadata: updated.metadata },
+                        actorType: 'user',
+                        result: 'SUCCESS',
+                    },
+                });
+
+                return updated;
+            },
+            {
+                isolationLevel: 'Serializable',
+                timeout: 10000,
+            },
+        );
+
+        this.logger.log(`Order ${orderId} marked as completed by seller ${order.sellerId}`);
+        return updatedOrder;
     }
 
     /**

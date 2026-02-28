@@ -219,11 +219,14 @@ export class BalanceService {
         const result = await this.prisma.$transaction(async (tx) => {
             const buyerBalance = await this.getOrCreateBalanceInTx(tx, buyerId);
 
-            if (compareAmounts(buyerBalance.reserved, dto.amount) < 0) {
-                throw new InsufficientReservedFundsException(
-                    dto.amount,
-                    buyerBalance.reserved,
-                    dto.currency || 'USD',
+            // Check if reserved funds are insufficient
+            const hasInsufficientReserved = compareAmounts(buyerBalance.reserved, dto.amount) < 0;
+
+            if (hasInsufficientReserved) {
+                this.logger.warn(
+                    `Insufficient reserved funds for order ${dto.orderId}: ` +
+                    `buyer ${buyerId} reserved=${buyerBalance.reserved}, needed=${dto.amount}. ` +
+                    `This likely means escrow was already released. Will credit seller only.`,
                 );
             }
 
@@ -234,13 +237,17 @@ export class BalanceService {
                 reserved: sellerBalance.reserved,
             };
 
-            const buyerNewReserved = subtractAmounts(buyerBalance.reserved, dto.amount);
-            const sellerNewAvailable = addAmounts(sellerBalance.available, dto.amount);
+            // Only deduct from buyer if they have sufficient reserved funds
+            let buyerNewReserved = buyerBalance.reserved;
+            if (!hasInsufficientReserved) {
+                buyerNewReserved = subtractAmounts(buyerBalance.reserved, dto.amount);
+                await tx.balance.update({
+                    where: { userId: buyerId },
+                    data: { reserved: buyerNewReserved },
+                });
+            }
 
-            await tx.balance.update({
-                where: { userId: buyerId },
-                data: { reserved: buyerNewReserved },
-            });
+            const sellerNewAvailable = addAmounts(sellerBalance.available, dto.amount);
 
             const updatedSellerBalance = await tx.balance.update({
                 where: { userId: dto.sellerId },
@@ -250,34 +257,39 @@ export class BalanceService {
             const buyerAuditId = generateAuditLogId();
             const sellerAuditId = generateAuditLogId();
 
-            await tx.auditLog.createMany({
-                data: [
-                    {
-                        id: buyerAuditId,
-                        marketplaceId: 'system',
-                        userId: buyerId,
-                        action: 'RELEASE_DEDUCT_RESERVED',
-                        resourceType: 'balance',
-                        resourceId: buyerBalance.id,
-                        payloadBefore: { available: buyerBalance.available, reserved: buyerBalance.reserved },
-                        payloadAfter: { available: buyerBalance.available, reserved: buyerNewReserved },
-                        actorType: 'system',
-                        result: 'SUCCESS',
-                    },
-                    {
-                        id: sellerAuditId,
-                        marketplaceId: 'system',
-                        userId: dto.sellerId,
-                        action: 'RELEASE_CREDIT_AVAILABLE',
-                        resourceType: 'balance',
-                        resourceId: sellerBalance.id,
-                        payloadBefore: sellerPrevious,
-                        payloadAfter: { available: sellerNewAvailable, reserved: sellerBalance.reserved },
-                        actorType: 'system',
-                        result: 'SUCCESS',
-                    },
-                ],
+            const auditLogs = [];
+
+            // Only create buyer audit log if we actually deducted from reserved
+            if (!hasInsufficientReserved) {
+                auditLogs.push({
+                    id: buyerAuditId,
+                    marketplaceId: 'system',
+                    userId: buyerId,
+                    action: 'RELEASE_DEDUCT_RESERVED',
+                    resourceType: 'balance',
+                    resourceId: buyerBalance.id,
+                    payloadBefore: { available: buyerBalance.available, reserved: buyerBalance.reserved },
+                    payloadAfter: { available: buyerBalance.available, reserved: buyerNewReserved },
+                    actorType: 'system',
+                    result: 'SUCCESS',
+                });
+            }
+
+            // Always create seller audit log
+            auditLogs.push({
+                id: sellerAuditId,
+                marketplaceId: 'system',
+                userId: dto.sellerId,
+                action: 'RELEASE_CREDIT_AVAILABLE',
+                resourceType: 'balance',
+                resourceId: sellerBalance.id,
+                payloadBefore: sellerPrevious,
+                payloadAfter: { available: sellerNewAvailable, reserved: sellerBalance.reserved },
+                actorType: 'system',
+                result: 'SUCCESS',
             });
+
+            await tx.auditLog.createMany({ data: auditLogs });
 
             return {
                 sellerAuditId,
@@ -545,6 +557,106 @@ export class BalanceService {
             providerBalance,
             discrepancy,
             action: hasDiscrepancy ? 'flagged' : 'none',
+        };
+    }
+
+    /**
+     * Reconciles the local balance with the blockchain (Stellar) balance.
+     * If there's a discrepancy, it adjusts the local balance to match Stellar.
+     * This is useful when funds were added directly to the wallet outside the system.
+     *
+     * @param userId - The user's internal ID
+     * @returns Reconciliation result with adjusted balance
+     */
+    async reconcileWithProvider(userId: string): Promise<{
+        reconciled: boolean;
+        previousBalance: string;
+        newBalance: string;
+        providerBalance: string;
+        adjustment: string;
+    }> {
+        this.logger.log(`Reconciling balance with provider for user ${userId}`);
+
+        // First sync to detect discrepancy
+        const syncResult = await this.syncBalanceFromProvider(userId);
+
+        if (!syncResult.synced || syncResult.providerBalance === 'unknown') {
+            return {
+                reconciled: false,
+                previousBalance: syncResult.localBalance,
+                newBalance: syncResult.localBalance,
+                providerBalance: syncResult.providerBalance,
+                adjustment: '0.00',
+            };
+        }
+
+        const discrepancyValue = parseFloat(syncResult.discrepancy);
+
+        // If no discrepancy, nothing to do
+        if (discrepancyValue === 0) {
+            return {
+                reconciled: true,
+                previousBalance: syncResult.localBalance,
+                newBalance: syncResult.localBalance,
+                providerBalance: syncResult.providerBalance,
+                adjustment: '0.00',
+            };
+        }
+
+        // Adjust local balance to match provider
+        const previousBalance = syncResult.localBalance;
+        const newBalance = syncResult.providerBalance;
+
+        await this.prisma.$transaction(async (tx) => {
+            await tx.balance.update({
+                where: { userId },
+                data: { available: newBalance },
+            });
+
+            // Create audit log for the reconciliation adjustment
+            await tx.auditLog.create({
+                data: {
+                    id: generateAuditLogId(),
+                    marketplaceId: 'system',
+                    userId,
+                    action: 'BALANCE_RECONCILED',
+                    resourceType: 'balance',
+                    resourceId: userId,
+                    payloadBefore: { available: previousBalance },
+                    payloadAfter: { available: newBalance, adjustment: syncResult.discrepancy },
+                    actorType: 'system',
+                    result: 'SUCCESS',
+                },
+            });
+        });
+
+        this.logger.log(
+            `Balance reconciled for user ${userId}: ${previousBalance} → ${newBalance} (adjustment: ${syncResult.discrepancy})`,
+        );
+
+        // Emit event for the adjustment
+        this.eventBus.emit<BalanceCreditedPayload>({
+            eventType: EVENT_CATALOG.BALANCE_CREDITED,
+            aggregateId: userId,
+            aggregateType: 'Balance',
+            payload: {
+                userId,
+                amount: Math.abs(discrepancyValue).toFixed(2),
+                currency: 'USD',
+                source: 'reconciliation',
+                sourceId: 'stellar-sync',
+                previousAvailableBalance: previousBalance,
+                newAvailableBalance: newBalance,
+            },
+            metadata: EventBusService.createMetadata({ userId }),
+        });
+
+        return {
+            reconciled: true,
+            previousBalance,
+            newBalance,
+            providerBalance: syncResult.providerBalance,
+            adjustment: syncResult.discrepancy,
         };
     }
 

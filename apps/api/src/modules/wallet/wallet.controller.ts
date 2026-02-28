@@ -1,4 +1,4 @@
-import { Controller, Get, Inject, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Inject, Param, Query, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
 import { ScopeGuard } from '../../common/guards/scope.guard';
@@ -79,6 +79,25 @@ export class WalletController {
 
     return {
       data: transactions,
+    };
+  }
+
+  /**
+   * POST /users/:userId/wallet/swap-xlm-usdc
+   * Swap XLM for USDC using Stellar DEX (testnet only)
+   */
+  @Post('swap-xlm-usdc')
+  @Scopes('write')
+  @HttpCode(HttpStatus.OK)
+  async swapXlmForUsdc(
+    @Param('userId') userId: string,
+    @Body() body: { amount?: string },
+  ) {
+    const targetAmount = body.amount || '1000.00';
+    const result = await this.walletService.swapXlmForUsdc(userId, targetAmount);
+
+    return {
+      data: result,
     };
   }
 }

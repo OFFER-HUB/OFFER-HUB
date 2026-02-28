@@ -8,7 +8,7 @@
 import * as crypto from 'crypto';
 
 const ALGORITHM = 'aes-256-gcm';
-const IV_LENGTH = 16;
+const IV_LENGTH = 12; // 12 bytes is the recommended IV size for GCM
 const AUTH_TAG_LENGTH = 16;
 
 function getEncryptionKey(): Buffer {

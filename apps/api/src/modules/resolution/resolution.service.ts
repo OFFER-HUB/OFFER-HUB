@@ -210,55 +210,86 @@ export class ResolutionService {
         const sellerAddress = sellerDeposit.address!;
 
         try {
-            const milestoneResult = await this.escrowClient.changeMilestoneStatus(
-                order.escrow.trustlessContractId!,
-                '0', // Single-release escrows have 1 milestone at index 0
-                'completed',
-                sellerAddress,
-                escrowType,
-            );
-
-            if (milestoneResult.unsignedTransaction) {
-                const signedXdr = await this.paymentProvider.signEscrowTransaction(
-                    order.sellerId, // Seller signs milestone completion (serviceProvider role)
-                    milestoneResult.unsignedTransaction,
+            // 9a. Mark milestone as completed (idempotent - skip if already done)
+            try {
+                const milestoneResult = await this.escrowClient.changeMilestoneStatus(
+                    order.escrow.trustlessContractId!,
+                    '0', // Single-release escrows have 1 milestone at index 0
+                    'completed',
+                    sellerAddress,
+                    escrowType,
                 );
-                await this.escrowClient.sendTransaction(signedXdr);
-                this.logger.log(`Milestone completed for order ${orderId}`);
+
+                if (milestoneResult.unsignedTransaction) {
+                    const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                        order.sellerId, // Seller signs milestone completion (serviceProvider role)
+                        milestoneResult.unsignedTransaction,
+                    );
+                    await this.escrowClient.sendTransaction(signedXdr);
+                    this.logger.log(`Milestone completed for order ${orderId}`);
+                }
+            } catch (error: any) {
+                // Ignore if milestone already completed (check both error.message and error.details.message)
+                const errorMsg = error.details?.message || error.message || '';
+                if (errorMsg.includes('already been completed') || errorMsg.includes('already completed')) {
+                    this.logger.debug(`Milestone already completed for order ${orderId}, skipping`);
+                } else {
+                    throw error;
+                }
             }
 
-            // 10. Approve milestone (buyer confirms work is done)
-            const approveResult = await this.escrowClient.approveMilestone(
-                order.escrow.trustlessContractId!,
-                '0',
-                buyerAddress,
-                escrowType,
-            );
-
-            if (approveResult.unsignedTransaction) {
-                const signedXdr = await this.paymentProvider.signEscrowTransaction(
-                    order.buyerId, // Buyer signs milestone approval (approver role)
-                    approveResult.unsignedTransaction,
+            // 10. Approve milestone (buyer confirms work is done) - idempotent
+            try {
+                const approveResult = await this.escrowClient.approveMilestone(
+                    order.escrow.trustlessContractId!,
+                    '0',
+                    buyerAddress,
+                    escrowType,
                 );
-                await this.escrowClient.sendTransaction(signedXdr);
-                this.logger.log(`Milestone approved for order ${orderId}`);
+
+                if (approveResult.unsignedTransaction) {
+                    const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                        order.buyerId, // Buyer signs milestone approval (approver role)
+                        approveResult.unsignedTransaction,
+                    );
+                    await this.escrowClient.sendTransaction(signedXdr);
+                    this.logger.log(`Milestone approved for order ${orderId}`);
+                }
+            } catch (error: any) {
+                // Ignore if milestone already approved (check both error.message and error.details.message)
+                const errorMsg = error.details?.message || error.message || '';
+                if (errorMsg.includes('already been approved') || errorMsg.includes('already approved')) {
+                    this.logger.debug(`Milestone already approved for order ${orderId}, skipping`);
+                } else {
+                    throw error;
+                }
             }
 
-            // 11. Call escrowClient.releaseEscrow + sign+send
-            const releaseResult = await this.escrowClient.releaseEscrow(
-                order.escrow.trustlessContractId!,
-                buyerAddress,
-                escrowType,
-            );
-
-            // Sign and submit release transaction if unsigned XDR returned
-            if (releaseResult.unsignedTransaction) {
-                const signedXdr = await this.paymentProvider.signEscrowTransaction(
-                    order.buyerId,
-                    releaseResult.unsignedTransaction,
+            // 11. Call escrowClient.releaseEscrow + sign+send (idempotent)
+            try {
+                const releaseResult = await this.escrowClient.releaseEscrow(
+                    order.escrow.trustlessContractId!,
+                    buyerAddress,
+                    escrowType,
                 );
-                await this.escrowClient.sendTransaction(signedXdr);
-                this.logger.log(`Release transaction signed and submitted for order ${orderId}`);
+
+                // Sign and submit release transaction if unsigned XDR returned
+                if (releaseResult.unsignedTransaction) {
+                    const signedXdr = await this.paymentProvider.signEscrowTransaction(
+                        order.buyerId,
+                        releaseResult.unsignedTransaction,
+                    );
+                    await this.escrowClient.sendTransaction(signedXdr);
+                    this.logger.log(`Release transaction signed and submitted for order ${orderId}`);
+                }
+            } catch (error: any) {
+                // Ignore if funds already released (check both error.message and error.details.message)
+                const errorMsg = error.details?.message || error.message || '';
+                if (errorMsg.includes('funds have been released') || errorMsg.includes('already released')) {
+                    this.logger.debug(`Escrow funds already released for order ${orderId}, skipping`);
+                } else {
+                    throw error;
+                }
             }
         } catch (error: any) {
             this.logger.error(`Failed to release escrow for order ${orderId}:`, error);
@@ -325,11 +356,21 @@ export class ResolutionService {
         OrderStateMachine.assertTransition(order.status as OrderStatus, OrderStatus.RELEASED);
 
         // 4. Use BalanceService.release
-        await this.balanceService.release(order.buyerId, {
-            amount: order.amount,
-            orderId: order.id,
-            sellerId: order.sellerId,
-        });
+        try {
+            await this.balanceService.release(order.buyerId, {
+                amount: order.amount,
+                orderId: order.id,
+                sellerId: order.sellerId,
+            });
+        } catch (error: any) {
+            this.logger.error(`Failed to release balance for order ${orderId}:`, error);
+            // Rollback order status to IN_PROGRESS
+            await this.prisma.order.update({
+                where: { id: orderId },
+                data: { status: OrderStatus.IN_PROGRESS },
+            });
+            throw error;
+        }
 
         // 5. Update order → RELEASED → CLOSED in transaction
         const updated = await this.prisma.$transaction(

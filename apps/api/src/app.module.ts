@@ -21,6 +21,11 @@ import { PaymentProviderModule } from './providers/payment/payment-provider.modu
 import { WalletModule } from './modules/wallet/wallet.module';
 import { UsersModule } from './modules/users/users.module';
 import { EventsModule } from './modules/events/events.module';
+import { FreelancerModule } from './modules/freelancer/freelancer.module';
+import { ClientModule } from './modules/client/client.module';
+import { ServicesModule } from './modules/services/services.module';
+import { OffersModule } from './modules/offers/offers.module';
+import { ApplicationsModule } from './modules/applications/applications.module';
 import { QueueModule } from './modules/queues/queue.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 import { RateLimitGuard } from './common/guards/rate-limit.guard';
@@ -75,6 +80,11 @@ function getRedisConnection() {
     WalletModule,
     WebhooksModule,
     UsersModule,
+    FreelancerModule,
+    ClientModule,
+    ServicesModule,
+    OffersModule,
+    ApplicationsModule,
     TopUpsModule,
     WithdrawalsModule,
     BalanceModule,

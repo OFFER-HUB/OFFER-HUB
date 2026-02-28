@@ -12,7 +12,7 @@ import { PrismaService } from '../database/prisma.service';
 import { TrustlessWorkConfig } from '../../providers/trustless-work/trustless-work.config';
 import { encrypt, decrypt } from '../../utils/crypto';
 import { generateWalletId } from '@offerhub/shared';
-import { fundTestAccount, setupTestTrustline } from './testnet.utils';
+import { fundTestAccount, setupTestTrustline, swapXlmToUsdc } from './testnet.utils';
 
 @Injectable()
 export class WalletService {
@@ -37,12 +37,15 @@ export class WalletService {
 
   /**
    * Create an invisible wallet for a user.
-   * Generates keypair, encrypts secret, funds on testnet, sets up USDC trustline.
+   * Generates keypair, encrypts secret, funds on testnet, sets up USDC trustline,
+   * and attempts to swap XLM for USDC.
    */
   async createWallet(userId: string): Promise<{
     publicKey: string;
     funded: boolean;
     trustlineReady: boolean;
+    usdcSwapped: boolean;
+    usdcBalance?: string;
   }> {
     // Check if user already has a wallet
     const existing = await this.prisma.wallet.findFirst({
@@ -50,7 +53,7 @@ export class WalletService {
     });
     if (existing) {
       this.logger.warn(`User ${userId} already has an active wallet`);
-      return { publicKey: existing.publicKey, funded: true, trustlineReady: true };
+      return { publicKey: existing.publicKey, funded: true, trustlineReady: true, usdcSwapped: false };
     }
 
     // Generate Stellar keypair
@@ -77,15 +80,19 @@ export class WalletService {
 
     this.logger.log(`Wallet created for user ${userId}: ${publicKey}`);
 
-    // Fund on testnet + setup trustline
+    // Fund on testnet + setup trustline + swap XLM for USDC
     let funded = false;
     let trustlineReady = false;
+    let usdcSwapped = false;
+    let usdcBalance: string | undefined;
 
     if (this.stellarConfig.isTestnet()) {
       try {
+        // Step 1: Fund with XLM via Friendbot
         await fundTestAccount(publicKey);
         funded = true;
 
+        // Step 2: Setup USDC trustline
         await setupTestTrustline(
           keypair,
           this.stellarConfig.stellarHorizonUrl,
@@ -93,14 +100,58 @@ export class WalletService {
           this.stellarConfig.stellarUsdcIssuer,
         );
         trustlineReady = true;
+
+        // Step 3: Attempt to swap XLM for USDC (if DEX has liquidity)
+        const swapResult = await swapXlmToUsdc(
+          keypair,
+          this.stellarConfig.stellarHorizonUrl,
+          this.stellarConfig.stellarUsdcAssetCode,
+          this.stellarConfig.stellarUsdcIssuer,
+          '1000.00', // Target $1000 USDC
+        );
+
+        if (swapResult.success) {
+          usdcSwapped = true;
+          usdcBalance = swapResult.usdcBalance;
+          this.logger.log(`XLM swapped for USDC: ${usdcBalance} USDC`);
+        } else {
+          this.logger.warn(`XLM→USDC swap failed: ${swapResult.error}`);
+        }
       } catch (error) {
         this.logger.error(
-          `Failed to fund/trustline for ${publicKey}: ${error instanceof Error ? error.message : error}`,
+          `Failed to fund/trustline/swap for ${publicKey}: ${error instanceof Error ? error.message : error}`,
         );
       }
     }
 
-    return { publicKey, funded, trustlineReady };
+    return { publicKey, funded, trustlineReady, usdcSwapped, usdcBalance };
+  }
+
+  /**
+   * Attempt to swap XLM for USDC for an existing wallet.
+   * Uses Stellar DEX path payment.
+   */
+  async swapXlmForUsdc(userId: string, targetAmount: string = '1000.00'): Promise<{
+    success: boolean;
+    hash?: string;
+    usdcBalance?: string;
+    error?: string;
+  }> {
+    if (!this.stellarConfig.isTestnet()) {
+      return { success: false, error: 'Swap only available on testnet' };
+    }
+
+    const keypair = await this.getKeypair(userId);
+
+    const result = await swapXlmToUsdc(
+      keypair,
+      this.stellarConfig.stellarHorizonUrl,
+      this.stellarConfig.stellarUsdcAssetCode,
+      this.stellarConfig.stellarUsdcIssuer,
+      targetAmount,
+    );
+
+    return result;
   }
 
   /**

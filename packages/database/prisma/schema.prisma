@@ -124,12 +124,51 @@ enum IdempotencyStatus {
   FAILED
 }
 
+enum ServiceStatus {
+  ACTIVE
+  PAUSED
+  ARCHIVED
+}
+
+enum ServiceCategory {
+  WEB_DEVELOPMENT
+  MOBILE_DEVELOPMENT
+  DESIGN
+  WRITING
+  MARKETING
+  VIDEO
+  MUSIC
+  DATA
+  OTHER
+}
+
+enum OfferStatus {
+  ACTIVE
+  PENDING
+  CLOSED
+  COMPLETED
+}
+
+enum ApplicationStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+}
+
+enum OrderSource {
+  DIRECT
+  SERVICE
+  APPLICATION
+}
+
 // --- Models ---
 
 model User {
   id             String     @id @default(dbgenerated()) // Prefixed ID: usr_
   externalUserId String     @unique @map("external_user_id")
-  email          String?
+  email          String?    @unique
+  passwordHash   String?    @map("password_hash") // For direct auth (demo/dev)
   type           UserType   @default(BOTH)
   status         UserStatus @default(ACTIVE)
 
@@ -138,12 +177,15 @@ model User {
   airtmLinkedAt DateTime? @map("airtm_linked_at")
 
   // Relations
-  wallets     Wallet[]
-  balance     Balance?
-  topUps      TopUp[]
-  withdrawals Withdrawal[]
-  buyerOrders Order[]      @relation("BuyerOrders")
-  sellerOrders Order[]     @relation("SellerOrders")
+  wallets      Wallet[]
+  balance      Balance?
+  topUps       TopUp[]
+  withdrawals  Withdrawal[]
+  buyerOrders  Order[]   @relation("BuyerOrders")
+  sellerOrders Order[]   @relation("SellerOrders")
+  services     Service[]
+  offers       Offer[]
+  applications Application[] @relation("FreelancerApplications")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -206,6 +248,9 @@ model Order {
   buyer          User        @relation("BuyerOrders", fields: [buyerId], references: [id])
   sellerId       String      @map("seller_id")
   seller         User        @relation("SellerOrders", fields: [sellerId], references: [id])
+  serviceId      String?     @map("service_id")
+  service        Service?    @relation(fields: [serviceId], references: [id])
+  source         OrderSource @default(DIRECT)
   amount         String
   currency       String      @default("USD")
   status         OrderStatus @default(ORDER_CREATED)
@@ -214,9 +259,10 @@ model Order {
   metadata       Json?
 
   // Relations
-  escrow     Escrow?
-  dispute    Dispute?
-  milestones Milestone[]
+  escrow      Escrow?
+  dispute     Dispute?
+  milestones  Milestone[]
+  application Application? @relation("ApplicationOrder")
 
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -224,6 +270,7 @@ model Order {
   @@index([status])
   @@index([buyerId])
   @@index([sellerId])
+  @@index([serviceId])
   @@map("orders")
 }
 
@@ -294,6 +341,93 @@ model Dispute {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("disputes")
+}
+
+model Service {
+  id            String          @id // Prefixed ID: svc_
+  userId        String          @map("user_id")
+  user          User            @relation(fields: [userId], references: [id])
+  title         String
+  description   String
+  category      ServiceCategory
+  price         String          // Decimal string (e.g., "100.00")
+  deliveryDays  Int             @map("delivery_days")
+  status        ServiceStatus   @default(ACTIVE)
+  totalOrders   Int             @default(0) @map("total_orders")
+  averageRating String?         @map("average_rating") // Decimal string (e.g., "4.85")
+
+  // Relations
+  orders Order[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([status])
+  @@index([category])
+  @@map("services")
+}
+
+model Offer {
+  id              String          @id // Prefixed ID: ofr_
+  userId          String          @map("user_id")
+  user            User            @relation(fields: [userId], references: [id])
+  title           String
+  description     String
+  category        ServiceCategory
+  budget          String          // Decimal string (e.g., "500.00")
+  deadline        DateTime
+  status          OfferStatus     @default(ACTIVE)
+  applicantsCount Int             @default(0) @map("applicants_count")
+
+  // Relations
+  attachments OfferAttachment[]
+  applications Application[]
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([status])
+  @@index([category])
+  @@map("offers")
+}
+
+model OfferAttachment {
+  id        String @id // Prefixed ID: ofa_
+  offerId   String @map("offer_id")
+  offer     Offer  @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  filename  String // Original filename
+  mimeType  String @map("mime_type")
+  size      Int    // File size in bytes
+  url       String // Storage path or URL
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([offerId])
+  @@map("offer_attachments")
+}
+
+model Application {
+  id              String            @id // Prefixed ID: app_
+  offerId         String            @map("offer_id")
+  offer           Offer             @relation(fields: [offerId], references: [id], onDelete: Cascade)
+  freelancerId    String            @map("freelancer_id")
+  freelancer      User              @relation("FreelancerApplications", fields: [freelancerId], references: [id])
+  coverLetter     String            @map("cover_letter")
+  status          ApplicationStatus @default(PENDING)
+  proposedRate    String?           @map("proposed_rate") // Decimal string (optional)
+  orderId         String?           @unique @map("order_id")
+  order           Order?            @relation("ApplicationOrder", fields: [orderId], references: [id])
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@unique([offerId, freelancerId]) // Un freelancer solo puede aplicar una vez por oferta
+  @@index([offerId])
+  @@index([freelancerId])
+  @@index([status])
+  @@map("applications")
 }
 
 model Wallet {

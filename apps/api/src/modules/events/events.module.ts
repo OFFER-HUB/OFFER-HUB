@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { EventBusService } from './event-bus.service';
 import { SseService } from './sse.service';
@@ -9,7 +9,7 @@ import { AuditLogListener } from './audit-log.listener';
 
 /**
  * EventsModule
- * 
+ *
  * Provides the internal event bus and public SSE event stream.
  */
 @Module({
@@ -24,7 +24,7 @@ import { AuditLogListener } from './audit-log.listener';
             ignoreErrors: false,
         }),
         DatabaseModule,
-        AuthModule,
+        forwardRef(() => AuthModule),
     ],
     controllers: [EventsController],
     providers: [EventBusService, SseService, AuditLogListener],

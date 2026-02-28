@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { WalletService } from './wallet.service';
 import { WalletController } from './wallet.controller';
 import { BlockchainMonitorService } from './blockchain-monitor.service';
@@ -8,7 +8,7 @@ import { EventsModule } from '../events/events.module';
 import { AuthModule } from '../auth/auth.module';
 
 @Module({
-  imports: [DatabaseModule, TrustlessWorkModule, EventsModule, AuthModule],
+  imports: [DatabaseModule, TrustlessWorkModule, EventsModule, forwardRef(() => AuthModule)],
   controllers: [WalletController],
   providers: [WalletService, BlockchainMonitorService],
   exports: [WalletService],

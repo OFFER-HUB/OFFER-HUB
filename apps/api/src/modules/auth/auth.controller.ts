@@ -4,6 +4,7 @@ import { AuthService } from './auth.service';
 import { ApiKeyGuard } from '../../common/guards/api-key.guard';
 import { ScopeGuard } from '../../common/guards/scope.guard';
 import { Scopes } from '../../common/decorators/scopes.decorator';
+import { Public } from '../../common/decorators/public.decorator';
 
 interface ApiKeyInfo {
     id: string;
@@ -13,7 +14,36 @@ interface ApiKeyInfo {
 
 @Controller('auth')
 export class AuthController {
-    constructor(@Inject(AuthService) private readonly authService: AuthService) {}
+    constructor(@Inject(AuthService) private readonly authService: AuthService) { }
+
+    /**
+     * Register a new user with email/password.
+     * Public endpoint - no authentication required.
+     */
+    @Post('register')
+    @Public()
+    async register(
+        @Body('email') email: string,
+        @Body('password') password: string,
+        @Body('type') type?: 'BUYER' | 'SELLER' | 'BOTH',
+    ) {
+        const user = await this.authService.registerUser(email, password, type);
+        return { data: user };
+    }
+
+    /**
+     * Login with email/password.
+     * Public endpoint - no authentication required.
+     */
+    @Post('login')
+    @Public()
+    async login(
+        @Body('email') email: string,
+        @Body('password') password: string,
+    ) {
+        const result = await this.authService.loginUser(email, password);
+        return { data: result };
+    }
 
     /**
      * Creates a new API key.

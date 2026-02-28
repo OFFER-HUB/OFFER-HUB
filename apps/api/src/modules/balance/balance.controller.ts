@@ -146,4 +146,15 @@ export class BalanceController {
     async verifyBalance(@Param('userId') userId: string) {
         return this.balanceService.getBalanceWithProviderCheck(userId);
     }
+
+    /**
+     * Reconcile balance with blockchain (Stellar).
+     * Adjusts local balance to match the actual wallet balance.
+     */
+    @Post('reconcile')
+    @Scopes('write')
+    @HttpCode(HttpStatus.OK)
+    async reconcileBalance(@Param('userId') userId: string) {
+        return this.balanceService.reconcileWithProvider(userId);
+    }
 }
